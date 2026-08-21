@@ -76,6 +76,7 @@ describe('System screen', () => {
       restStartedAt: null,
       restDurationSeconds: null,
       restPausedAt: null,
+      restPausedTotalMs: 0,
       updatedAt: new Date().toISOString(),
     });
 

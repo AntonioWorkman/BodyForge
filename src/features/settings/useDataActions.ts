@@ -62,54 +62,65 @@ export function useDataActions(onChanged: () => Promise<void>) {
 
     setBusy('import');
 
+    let raw: string;
+    let validation: ReturnType<typeof services.backup.validate>;
     try {
       const file = new FileSystem.File(picked.assets[0].uri);
-      const raw = file.textSync();
-
-      const validation = services.backup.validate(raw);
-      if (!validation.ok) {
-        Alert.alert(
-          'This backup cannot be imported',
-          `Nothing has been changed.\n\n${validation.errors.join('\n')}`,
-        );
-        return;
-      }
-
-      const { summary } = validation;
-      Alert.alert(
-        'Replace all data?',
-        `This backup holds ${summary.sessions} completed ${
-          summary.sessions === 1 ? 'quest' : 'quests'
-        } and ${summary.measurements} ${
-          summary.measurements === 1 ? 'measurement' : 'measurements'
-        } for ${summary.playerName}.\n\nEverything currently on this device will be replaced. This cannot be undone.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Replace',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                const result = await services.backup.import(raw);
-                await services.progression.recomputeAllMastery();
-                await onChanged();
-                fireHaptic('progressionUnlocked');
-                Alert.alert(
-                  'Data restored',
-                  `${result.sessions} quests and ${result.measurements} measurements were restored.`,
-                );
-              } catch {
-                Alert.alert('Import failed', 'Your data could not be restored.');
-              }
-            },
-          },
-        ],
-      );
+      raw = file.textSync();
+      validation = services.backup.validate(raw);
     } catch {
-      Alert.alert('Import failed', 'That file could not be read. Nothing has changed.');
-    } finally {
       setBusy(null);
+      Alert.alert('Import failed', 'That file could not be read. Nothing has changed.');
+      return;
     }
+
+    if (!validation.ok) {
+      setBusy(null);
+      Alert.alert(
+        'This backup cannot be imported',
+        `Nothing has been changed.\n\n${validation.errors.join('\n')}`,
+      );
+      return;
+    }
+
+    const { summary } = validation;
+
+    // `Alert.alert` returns immediately, so the guard is held until the player
+    // answers and any resulting work has finished — releasing it here would
+    // let a second import or a clear start on the same connection.
+    Alert.alert(
+      'Replace all data?',
+      `This backup holds ${summary.sessions} completed ${
+        summary.sessions === 1 ? 'quest' : 'quests'
+      } and ${summary.measurements} ${
+        summary.measurements === 1 ? 'measurement' : 'measurements'
+      } for ${summary.playerName}.\n\nEverything currently on this device will be replaced. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => setBusy(null) },
+        {
+          text: 'Replace',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await services.backup.import(raw);
+              await services.progression.recomputeAllMastery();
+              await onChanged();
+              fireHaptic('progressionUnlocked');
+              Alert.alert(
+                'Data restored',
+                `${result.sessions} quests and ${result.measurements} measurements were restored.`,
+              );
+            } catch {
+              Alert.alert('Import failed', 'Your data could not be restored.');
+            } finally {
+              setBusy(null);
+            }
+          },
+        },
+      ],
+      // Dismissing the sheet without choosing must not strand the guard.
+      { onDismiss: () => setBusy(null) },
+    );
   }, [busy, onChanged, services]);
 
   const clearData = useCallback(() => {

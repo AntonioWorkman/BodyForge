@@ -501,13 +501,15 @@ class SqliteSessionRepository implements SessionRepository {
   async saveUiState(state: ActiveSessionUiState): Promise<void> {
     await this.db.runAsync(
       `INSERT INTO active_session_state
-         (session_id, current_position, rest_started_at, rest_duration_seconds, rest_paused_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+         (session_id, current_position, rest_started_at, rest_duration_seconds,
+          rest_paused_at, rest_paused_total_ms, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(session_id) DO UPDATE SET
          current_position = excluded.current_position,
          rest_started_at = excluded.rest_started_at,
          rest_duration_seconds = excluded.rest_duration_seconds,
          rest_paused_at = excluded.rest_paused_at,
+         rest_paused_total_ms = excluded.rest_paused_total_ms,
          updated_at = excluded.updated_at`,
       [
         state.sessionId,
@@ -515,6 +517,7 @@ class SqliteSessionRepository implements SessionRepository {
         state.restStartedAt,
         state.restDurationSeconds,
         state.restPausedAt,
+        Math.max(0, Math.round(state.restPausedTotalMs)),
         state.updatedAt,
       ],
     );
@@ -527,6 +530,7 @@ class SqliteSessionRepository implements SessionRepository {
       rest_started_at: string | null;
       rest_duration_seconds: number | null;
       rest_paused_at: string | null;
+      rest_paused_total_ms: number | null;
       updated_at: string;
     }>('SELECT * FROM active_session_state WHERE session_id = ?', [sessionId]);
 
@@ -537,6 +541,7 @@ class SqliteSessionRepository implements SessionRepository {
       restStartedAt: row.rest_started_at,
       restDurationSeconds: row.rest_duration_seconds,
       restPausedAt: row.rest_paused_at,
+      restPausedTotalMs: row.rest_paused_total_ms ?? 0,
       updatedAt: row.updated_at,
     };
   }

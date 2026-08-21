@@ -2,7 +2,7 @@ import { APP_CONFIG } from '@/config/app.config';
 import type { RepositoryBundle } from '@/database/repositories/interfaces';
 import type { SqlDatabase } from '@/database/sqlDatabase';
 import { encodeStringArray } from '@/database/repositories/rows';
-import { seedCatalog } from '@/database/seed';
+import { seedCatalog, seedProgressionStates } from '@/database/seed';
 
 import type { Backup, BackupValidationResult } from './backupSchema';
 import { validateBackup } from './backupSchema';
@@ -78,6 +78,17 @@ export class BackupService {
     }
 
     const backup = result.backup;
+
+    // The catalog is refreshed first, outside the transaction. It has to happen
+    // before the restore so foreign keys have targets, and it cannot happen
+    // inside it: `seedCatalog` opens its own transaction, and Expo SQLite
+    // issues a bare BEGIN that fails when nested.
+    await seedCatalog(this.db, now.toISOString());
+
+    const knownVariations = await this.db.getAllAsync<{ id: string }>(
+      'SELECT id FROM exercise_variation',
+    );
+    const known = new Set(knownVariations.map((row) => row.id));
 
     await this.db.withTransactionAsync(async () => {
       await this.clearPlayerTables();
@@ -181,15 +192,7 @@ export class BackupService {
         );
       }
 
-      // The catalog is re-seeded before progression rows so that a backup made
-      // on an older build cannot reference a variation this build lacks.
-      await seedCatalog(this.db, now.toISOString());
       await this.db.runAsync('DELETE FROM progression_state', []);
-
-      const knownVariations = await this.db.getAllAsync<{ id: string }>(
-        'SELECT id FROM exercise_variation',
-      );
-      const known = new Set(knownVariations.map((row) => row.id));
 
       for (const state of backup.progression) {
         if (!known.has(state.variationId)) continue;
@@ -209,12 +212,20 @@ export class BackupService {
       }
 
       for (const entry of backup.templateExercises) {
+        // Skipped rather than written blind: an unknown variation would fail
+        // the foreign key and abort the whole restore. The template keeps the
+        // freshly seeded default instead.
+        if (!known.has(entry.variationId)) continue;
         await this.db.runAsync(
           'UPDATE workout_template_exercise SET variation_id = ? WHERE id = ?',
           [entry.variationId, entry.id],
         );
       }
     });
+
+    // A backup can predate variations this build knows about; those get their
+    // starting state now that the restored rows are in place.
+    await seedProgressionStates(this.db, now.toISOString());
 
     return { sessions: backup.sessions.length, measurements: backup.measurements.length };
   }

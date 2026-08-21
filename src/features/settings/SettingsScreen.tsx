@@ -141,7 +141,7 @@ export function SettingsScreen() {
 
         <ActionRow
           label="Default rest"
-          description="Used when a prescription does not set its own."
+          description="Falls back to this when an exercise has no rest of its own."
           value={`${settings.defaultRestSeconds}s`}
           onPress={() => setChooser('rest')}
         />

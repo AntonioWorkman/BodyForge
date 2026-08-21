@@ -370,13 +370,29 @@ export const ATTRIBUTE_IDS: readonly AttributeId[] = [
  * subtracted from the full result. That makes "recent change" literal rather
  * than an invented trend.
  */
-export function computeAttributes(input: AttributeInput): AttributeValue[] {
-  const previousInput: AttributeInput = { ...input, sessions: input.sessions.slice(0, -1) };
+export function computeAttributes(
+  input: AttributeInput,
+  /**
+   * State as it stood before the most recent session. Strength, Endurance and
+   * Consistency can be rewound by dropping that session, but Mastery depends
+   * only on progression rows — so without the prior states its delta would be
+   * structurally zero, and a confirmed progression would show "No change".
+   */
+  previousProgressionStates: readonly ProgressionState[] = input.progressionStates,
+): AttributeValue[] {
+  const previousInput: AttributeInput = {
+    ...input,
+    sessions: input.sessions.slice(0, -1),
+    progressionStates: previousProgressionStates,
+  };
+
+  const hasPrior =
+    input.sessions.length > 0 || previousProgressionStates !== input.progressionStates;
 
   return ATTRIBUTE_IDS.map((id) => {
     const compute = COMPUTERS[id];
     const current = compute(input);
-    const previous = input.sessions.length > 0 ? compute(previousInput) : { value: 0 };
+    const previous = hasPrior ? compute(previousInput) : { value: 0 };
     const meta = ATTRIBUTE_META[id];
 
     return {

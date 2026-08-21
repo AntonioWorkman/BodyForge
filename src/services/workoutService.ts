@@ -1,5 +1,5 @@
 import type { ActiveSessionUiState, RepositoryBundle } from '@/database/repositories/interfaces';
-import { countQualifyingSessions, isQualifyingPerformance } from '@/domain/mastery';
+import { MASTERY_RULES, countQualifyingSessions, isQualifyingPerformance } from '@/domain/mastery';
 import { countImprovements, findNewPersonalBests } from '@/domain/personalBests';
 import { phaseForSessionCount } from '@/domain/phases';
 import { advanceRotation, templateForRotation } from '@/domain/schedule';
@@ -191,6 +191,7 @@ export class WorkoutService {
       restStartedAt: null,
       restDurationSeconds: null,
       restPausedAt: null,
+      restPausedTotalMs: 0,
       updatedAt: now.toISOString(),
     });
 
@@ -350,7 +351,8 @@ export class WorkoutService {
       const state = await this.repositories.progression.get(performance.variationId);
       if (!state) continue;
 
-      const wasEligible = state.qualifyingSessions >= 2;
+      const required = MASTERY_RULES.qualifyingSessionsRequired;
+      const wasEligible = state.qualifyingSessions >= required;
       await this.repositories.progression.setQualifyingSessions(
         performance.variationId,
         qualifying,
@@ -358,7 +360,7 @@ export class WorkoutService {
 
       if (
         !wasEligible &&
-        qualifying >= 2 &&
+        qualifying >= required &&
         state.status === 'current' &&
         isQualifyingPerformance(performance)
       ) {

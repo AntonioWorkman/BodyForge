@@ -51,6 +51,36 @@ describe('schema migrations', () => {
     db.close();
   });
 
+  it('adds the paused-rest column on top of the initial schema', async () => {
+    const db = createTestDatabase();
+    await migrate(db);
+
+    const columns = await db.getAllAsync<{ name: string }>(
+      "SELECT name FROM pragma_table_info('active_session_state')",
+    );
+    expect(columns.map((c) => c.name)).toContain('rest_paused_total_ms');
+    db.close();
+  });
+
+  it('migrates a database already at version 1 without losing its rows', async () => {
+    const db = createTestDatabase();
+    // Apply only the first migration, as an older install would have.
+    const [first] = [...MIGRATIONS].sort((a, b) => a.version - b.version);
+    await first!.up(db);
+    await db.execAsync(`PRAGMA user_version = ${first!.version}`);
+
+    await db.runAsync(
+      `INSERT INTO player_profile (id, name, avatar_uri, created_at, total_xp, next_template_rotation_order)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      ['player', 'Existing', null, '2026-08-01T00:00:00.000Z', 345, 1],
+    );
+
+    await expect(migrate(db)).resolves.toBe(LATEST_SCHEMA_VERSION);
+    const row = await db.getFirstAsync<{ total_xp: number }>('SELECT total_xp FROM player_profile');
+    expect(row?.total_xp).toBe(345);
+    db.close();
+  });
+
   it('declares unique, ascending versions', () => {
     const versions = MIGRATIONS.map((m) => m.version);
     expect(new Set(versions).size).toBe(versions.length);

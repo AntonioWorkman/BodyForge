@@ -112,6 +112,45 @@ describe('progression qualification', () => {
     await expect(harness.progression.confirmProgression('var-push-up-regular')).rejects.toThrow();
   });
 
+  it('counts a qualified variation toward Mastery, not just a confirmed one', async () => {
+    for (const day of [2, 4, 6]) {
+      await completeSession(harness, new Date(`2026-08-0${day}T10:00:00.000Z`), atTopOfRange);
+    }
+
+    // Ready, not yet confirmed — Mastery must still reflect it.
+    const attributes = await harness.player.getAttributes();
+    const mastery = attributes.find((a) => a.id === 'mastery')!;
+    expect(mastery.value).toBeGreaterThan(0);
+    expect(mastery.contributions.some((c) => c.detail.includes('ready to progress'))).toBe(true);
+  });
+
+  it('reports a Mastery delta in the session a progression is confirmed', async () => {
+    for (const day of [2, 4, 6]) {
+      await completeSession(harness, new Date(`2026-08-0${day}T10:00:00.000Z`), atTopOfRange);
+    }
+
+    const before = (await harness.player.getAttributes()).find((a) => a.id === 'mastery')!;
+    await harness.progression.confirmProgression('var-push-up-regular');
+    const after = (await harness.player.getAttributes()).find((a) => a.id === 'mastery')!;
+
+    expect(after.value).toBeGreaterThan(before.value);
+    expect(after.contributions.some((c) => c.detail.includes('Progression confirmed'))).toBe(true);
+
+    // The regression this guards: the delta used to be structurally zero, so
+    // Status read "No change" even in the session a progression was confirmed.
+    // It measures change since the last completed quest — which covers both the
+    // confirmation and any variation that became ready during that quest — so
+    // it is larger than the confirmation alone, not equal to it.
+    expect(after.delta).toBeGreaterThan(0);
+    expect(after.delta).toBeGreaterThanOrEqual(after.value - before.value);
+  });
+
+  it('reports no Mastery delta when nothing was confirmed', async () => {
+    await completeSession(harness, new Date('2026-08-02T10:00:00.000Z'), atBottomOfRange);
+    const mastery = (await harness.player.getAttributes()).find((a) => a.id === 'mastery')!;
+    expect(mastery.delta).toBe(0);
+  });
+
   it('exposes the chain view with a single current node per chain', async () => {
     const chains = await harness.progression.getChains();
     expect(chains.length).toBeGreaterThan(0);

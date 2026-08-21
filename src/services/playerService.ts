@@ -1,6 +1,7 @@
 import { APP_CONFIG } from '@/config/app.config';
 import type { RepositoryBundle } from '@/database/repositories/interfaces';
 import { computeAttributes } from '@/domain/attributes';
+import { countQualifyingSessions, deriveStatus } from '@/domain/mastery';
 import { coreStageForSessions, coreStageProgress } from '@/domain/coreStages';
 import type { CoreStage } from '@/domain/coreStages';
 import { resolveLevel } from '@/domain/levels';
@@ -12,6 +13,8 @@ import type {
   LevelState,
   PhaseState,
   PlayerProfile,
+  ProgressionState,
+  WorkoutSessionDetail,
 } from '@/domain/types';
 
 import { createId } from './ids';
@@ -102,19 +105,65 @@ export class PlayerService {
    * progressions. Nothing here is estimated or invented.
    */
   async getAttributes(now = new Date()): Promise<AttributeValue[]> {
-    const [sessions, progressionStates, variations, settings] = await Promise.all([
+    const [sessions, storedStates, variations, settings] = await Promise.all([
       this.repositories.sessions.listCompleted(),
       this.repositories.progression.list(),
       this.repositories.catalog.listVariations(),
       this.repositories.settings.get(),
     ]);
 
-    return computeAttributes({
-      sessions,
-      progressionStates,
-      variationsById: new Map(variations.map((variation) => [variation.id, variation])),
-      sessionsPerWeekTarget: settings.sessionsPerWeekTarget,
-      now,
+    // `ready` is derived, never stored, so it has to be resolved here — reading
+    // the raw rows would leave qualified variations uncounted by Mastery.
+    const progressionStates = storedStates.map((state) => ({
+      ...state,
+      status: deriveStatus(state),
+    }));
+
+    const variationsById = new Map(variations.map((variation) => [variation.id, variation]));
+
+    return computeAttributes(
+      {
+        sessions,
+        progressionStates,
+        variationsById,
+        sessionsPerWeekTarget: settings.sessionsPerWeekTarget,
+        now,
+      },
+      this.progressionBefore(storedStates, sessions),
+    );
+  }
+
+  /**
+   * Progression as it stood before the most recent completed session: anything
+   * confirmed since then is rolled back, and qualifying counts are recomputed
+   * without that session. This is what makes Mastery's "recent change" real
+   * rather than always zero.
+   */
+  private progressionBefore(
+    storedStates: readonly ProgressionState[],
+    sessions: readonly WorkoutSessionDetail[],
+  ): ProgressionState[] {
+    const priorSessions = sessions.slice(0, -1);
+    const lastCompletedAt = sessions[sessions.length - 1]?.completedAt ?? null;
+
+    return storedStates.map((state) => {
+      const confirmedSince =
+        state.masteredAt !== null && lastCompletedAt !== null && state.masteredAt > lastCompletedAt;
+
+      const rolledBack: ProgressionState = confirmedSince
+        ? { ...state, status: 'current', masteredAt: null }
+        : state;
+
+      const qualifyingSessions = countQualifyingSessions(
+        priorSessions.flatMap((session) =>
+          session.performances.filter(
+            (performance) => performance.variationId === state.variationId,
+          ),
+        ),
+      );
+
+      const before: ProgressionState = { ...rolledBack, qualifyingSessions };
+      return { ...before, status: deriveStatus(before) };
     });
   }
 

@@ -170,8 +170,24 @@ const initialSchema: Migration = {
   },
 };
 
+/**
+ * Records how long a rest period spent paused. Without it a paused rest was
+ * restored as if it had been running the whole time, so reopening the app came
+ * back short by however long the player had paused for.
+ */
+const restPausedTotal: Migration = {
+  version: 2,
+  name: 'rest-paused-total',
+  up: async (db) => {
+    await db.execAsync(`
+      ALTER TABLE active_session_state
+        ADD COLUMN rest_paused_total_ms INTEGER NOT NULL DEFAULT 0;
+    `);
+  },
+};
+
 /** Ordered list of every migration this build knows how to apply. */
-export const MIGRATIONS: readonly Migration[] = [initialSchema];
+export const MIGRATIONS: readonly Migration[] = [initialSchema, restPausedTotal];
 
 /** The schema version a fully migrated database reports. */
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.reduce(

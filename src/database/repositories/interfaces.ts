@@ -74,6 +74,8 @@ export interface ActiveSessionUiState {
   restStartedAt: string | null;
   restDurationSeconds: number | null;
   restPausedAt: string | null;
+  /** Milliseconds the rest period has already spent paused. */
+  restPausedTotalMs: number;
   updatedAt: string;
 }
 

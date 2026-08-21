@@ -79,6 +79,48 @@ describe('backup export and import', () => {
     );
   });
 
+  it('imports without nesting transactions, as the real driver requires', async () => {
+    await seedRealData();
+    const json = await harness.backup.exportToJson();
+
+    // The test double rejects a nested BEGIN exactly as Expo SQLite does, so
+    // this passing is what proves import works on a device.
+    await expect(harness.backup.import(json)).resolves.toBeDefined();
+  });
+
+  it('clears without nesting transactions either', async () => {
+    await seedRealData();
+    await expect(harness.backup.clearAll()).resolves.toBeUndefined();
+  });
+
+  it('skips a template variation this build does not have, rather than aborting', async () => {
+    await seedRealData();
+    const document = JSON.parse(await harness.backup.exportToJson());
+    document.templateExercises[0].variationId = 'var-from-a-newer-build';
+
+    // The restore still succeeds; the affected template keeps its seeded default.
+    await expect(harness.backup.import(JSON.stringify(document))).resolves.toBeDefined();
+
+    const plan = await harness.workouts.buildPlan('template-workout-a');
+    expect(plan?.entries).toHaveLength(7);
+    expect(plan?.entries.map((entry) => entry.variation.id)).not.toContain(
+      'var-from-a-newer-build',
+    );
+  });
+
+  it('gives variations the backup never knew about a starting state', async () => {
+    await seedRealData();
+    const document = JSON.parse(await harness.backup.exportToJson());
+    // An older backup that predates most of the catalog.
+    document.progression = document.progression.slice(0, 2);
+
+    await harness.backup.import(JSON.stringify(document));
+
+    const states = await harness.repositories.progression.list();
+    const variations = await harness.repositories.catalog.listVariations();
+    expect(states).toHaveLength(variations.length);
+  });
+
   it('rejects text that is not JSON', () => {
     const result = validateBackup('not json at all');
     expect(result.ok).toBe(false);

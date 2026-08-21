@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { MainQuestScreen } from '../MainQuestScreen';
 import { renderWithServices } from '@/testing/renderWithServices';
@@ -153,6 +154,60 @@ describe('Main Quest', () => {
     await waitFor(() => expect(screen.getByTestId('exercise-detail-sheet')).toBeTruthy());
     expect(screen.getByText('Front shin close to vertical at the bottom.')).toBeTruthy();
     expect(screen.getByTestId('main-quest')).toBeTruthy();
+  });
+
+  it('leaving a quest keeps the resume position it was left at', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+
+    // Move to the third exercise, which persists that position.
+    await fireEvent.press(screen.getByLabelText('Next exercise'));
+    await fireEvent.press(screen.getByLabelText('Next exercise'));
+
+    const active = await harness.services.workouts.getActiveSession();
+    await waitFor(async () => {
+      expect((await harness.services.workouts.getUiState(active!.id))?.currentPosition).toBe(2);
+    });
+
+    await fireEvent.press(screen.getByTestId('quest-exit'));
+    const [, , buttons] = alertSpy.mock.calls[0] as [
+      string,
+      string,
+      { text?: string; onPress?: () => void }[],
+    ];
+    buttons.find((button) => button.text === 'Leave')?.onPress?.();
+
+    // Settle first: the offending write was asynchronous, so polling with
+    // waitFor would pass on its first check before the damage landed.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // The regression this guards: clearing the store used to refire the save
+    // effect and overwrite the stored position with 0.
+    const state = await harness.services.workouts.getUiState(active!.id);
+    expect(state?.currentPosition).toBe(2);
+
+    alertSpy.mockRestore();
+  });
+
+  it('discarding a quest leaves nothing behind to write to', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    const active = await harness.services.workouts.getActiveSession();
+
+    await fireEvent.press(screen.getByTestId('quest-exit'));
+    const [, , buttons] = alertSpy.mock.calls[0] as [
+      string,
+      string,
+      { text?: string; onPress?: () => void | Promise<void> }[],
+    ];
+    await buttons.find((button) => button.text === 'Discard quest')?.onPress?.();
+
+    await waitFor(async () => {
+      expect(await harness.services.workouts.getActiveSession()).toBeNull();
+    });
+    expect(await harness.services.workouts.getUiState(active!.id)).toBeNull();
+
+    alertSpy.mockRestore();
   });
 
   it('states plainly that there is no previous record on a first session', () => {

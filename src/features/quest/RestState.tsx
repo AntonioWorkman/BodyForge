@@ -144,7 +144,12 @@ export function RestState({ nextExerciseName, nextSetLabel, onSkip, onComplete }
           <Button
             label="+30 sec"
             variant="secondary"
-            onPress={() => extendRest(30)}
+            onPress={() => {
+              // Re-arm the ten-second cue: the extended period has its own
+              // final stretch, and without this the haptic never fires again.
+              warned.current = false;
+              extendRest(30);
+            }}
             style={styles.control}
             testID="rest-extend"
           />

@@ -23,6 +23,7 @@ import { fire as fireHaptic } from '@/motion/haptics';
 import { useReducedMotion } from '@/motion/useMotionPreference';
 import { useServices } from '@/providers/servicesContext';
 import { defaultDraftFor, useActiveWorkoutStore } from '@/stores/activeWorkoutStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 import { ExerciseDetailSheet } from './ExerciseDetailSheet';
 import { ExerciseListSheet } from './ExerciseListSheet';
@@ -63,6 +64,10 @@ export function MainQuestScreen() {
   const endRest = useActiveWorkoutStore((store) => store.endRest);
   const rest = useActiveWorkoutStore((store) => store.rest);
   const clearWorkout = useActiveWorkoutStore((store) => store.clear);
+  const storeSessionId = useActiveWorkoutStore((store) => store.sessionId);
+  // The player's configured fallback, used whenever a prescription does not
+  // carry its own rest duration.
+  const defaultRestSeconds = useSettingsStore((store) => store.defaultRestSeconds);
 
   const [listVisible, setListVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
@@ -102,17 +107,23 @@ export function MainQuestScreen() {
 
   // Persist the on-screen position and any running rest period, so a relaunch
   // resumes exactly here.
+  //
+  // Guarded on the store still owning this session: leaving or discarding a
+  // quest clears the store, and without the guard this effect would refire on
+  // the reset position — overwriting the resume point with 0, or writing to a
+  // session row that was just deleted.
   useEffect(() => {
-    if (!session) return;
+    if (!session || storeSessionId !== session.id) return;
     void services.workouts.saveUiState({
       sessionId: session.id,
       currentPosition: position,
       restStartedAt: rest ? new Date(rest.startedAt).toISOString() : null,
       restDurationSeconds: rest?.durationSeconds ?? null,
       restPausedAt: rest?.pausedAt ? new Date(rest.pausedAt).toISOString() : null,
+      restPausedTotalMs: rest?.pausedTotalMs ?? 0,
       updatedAt: new Date().toISOString(),
     });
-  }, [position, rest, services, session]);
+  }, [position, rest, services, session, storeSessionId]);
 
   const goToPosition = useCallback(
     (next: number) => {
@@ -144,9 +155,10 @@ export function MainQuestScreen() {
 
     // Seed the next set from what was just logged.
     setDraft(performance.id, draft);
-    startRest(performance.prescribed.restSeconds);
+    startRest(performance.prescribed.restSeconds || defaultRestSeconds);
   }, [
     currentSet,
+    defaultRestSeconds,
     draft,
     exerciseDone,
     performance,
@@ -173,8 +185,8 @@ export function MainQuestScreen() {
     setPhase('logging');
     // Rest between exercises uses the prescription of the exercise just
     // finished, which is the work the player is actually recovering from.
-    startRest(session.performances[position]?.prescribed.restSeconds ?? 90);
-  }, [position, router, session, setPhase, setPosition, startRest]);
+    startRest(session.performances[position]?.prescribed.restSeconds || defaultRestSeconds);
+  }, [defaultRestSeconds, position, router, session, setPhase, setPosition, startRest]);
 
   const confirmExit = useCallback(() => {
     if (!session) return;
@@ -397,7 +409,8 @@ export function MainQuestScreen() {
               testID="complete-set"
             />
             <Text variant="caption" color="textMuted" align="center" style={styles.restNote}>
-              Next rest · {formatRestLabel(performance.prescribed.restSeconds)}
+              Next rest ·{' '}
+              {formatRestLabel(performance.prescribed.restSeconds || defaultRestSeconds)}
             </Text>
           </>
         )}

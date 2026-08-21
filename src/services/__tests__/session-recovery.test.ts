@@ -62,6 +62,7 @@ describe('active workout recovery', () => {
       restStartedAt: '2026-08-02T10:20:00.000Z',
       restDurationSeconds: 90,
       restPausedAt: null,
+      restPausedTotalMs: 0,
       updatedAt: '2026-08-02T10:20:00.000Z',
     });
 
@@ -71,6 +72,51 @@ describe('active workout recovery', () => {
       restStartedAt: '2026-08-02T10:20:00.000Z',
       restDurationSeconds: 90,
     });
+  });
+
+  it('restores a rest period that was paused, without losing the paused time', async () => {
+    const plan = await harness.workouts.getNextPlan();
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
+
+    // Rest began at 10:20, was paused at 10:20:30 after 30s of running.
+    await harness.workouts.saveUiState({
+      sessionId: session.id,
+      currentPosition: 0,
+      restStartedAt: '2026-08-02T10:20:00.000Z',
+      restDurationSeconds: 120,
+      restPausedAt: '2026-08-02T10:20:30.000Z',
+      restPausedTotalMs: 15_000,
+      updatedAt: '2026-08-02T10:20:30.000Z',
+    });
+
+    const state = await harness.workouts.getUiState(session.id);
+    expect(state?.restPausedTotalMs).toBe(15_000);
+    expect(state?.restPausedAt).toBe('2026-08-02T10:20:30.000Z');
+  });
+
+  it('defaults paused time to zero for state written before it was tracked', async () => {
+    const plan = await harness.workouts.getNextPlan();
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
+
+    // A row as an older build would have left it, before the column existed.
+    await harness.db.runAsync(
+      `INSERT INTO active_session_state
+         (session_id, current_position, rest_started_at, rest_duration_seconds,
+          rest_paused_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET current_position = excluded.current_position`,
+      [session.id, 2, null, null, null, '2026-08-02T10:00:00.000Z'],
+    );
+
+    const state = await harness.workouts.getUiState(session.id);
+    expect(state?.restPausedTotalMs).toBe(0);
+    expect(state?.currentPosition).toBe(2);
   });
 
   it('never starts a second session while one is active', async () => {

@@ -76,14 +76,18 @@ export function useQuestSession(templateId: string | undefined): QuestSessionSta
           if (ui?.restStartedAt && ui.restDurationSeconds) {
             const startedAt = new Date(ui.restStartedAt).getTime();
             const pausedAt = ui.restPausedAt ? new Date(ui.restPausedAt).getTime() : null;
-            const elapsed = (pausedAt ?? Date.now()) - startedAt;
+            const pausedTotalMs = ui.restPausedTotalMs;
+            // Time spent paused does not count against the rest period, so it
+            // has to come off the elapsed total here too — otherwise a rest
+            // that was paused comes back short.
+            const elapsed = (pausedAt ?? Date.now()) - startedAt - pausedTotalMs;
 
             if (elapsed < ui.restDurationSeconds * 1000) {
               restoreRest({
                 startedAt,
                 durationSeconds: ui.restDurationSeconds,
                 pausedAt,
-                pausedTotalMs: 0,
+                pausedTotalMs,
               });
             }
           }

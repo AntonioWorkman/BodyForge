@@ -14,7 +14,7 @@ export function createTestDatabase(): SqlDatabase & { close: () => void } {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
 
-  let transactionDepth = 0;
+  let inTransaction = false;
 
   const normalise = (params: SqlBindValue[] = []): (string | number | null)[] =>
     params.map((value) => (value === undefined ? null : value));
@@ -43,18 +43,16 @@ export function createTestDatabase(): SqlDatabase & { close: () => void } {
       db.prepare(source).all(...normalise(params)) as T[],
 
     withTransactionAsync: async (task) => {
-      // Nested calls join the outer transaction, matching Expo SQLite.
-      if (transactionDepth > 0) {
-        transactionDepth += 1;
-        try {
-          await task();
-        } finally {
-          transactionDepth -= 1;
-        }
-        return;
+      // Expo SQLite issues a bare BEGIN with no savepoint or nesting support,
+      // so a nested call fails on device. This double rejects nesting for the
+      // same reason rather than quietly joining the outer transaction — an
+      // earlier version did join, and hid a bug that broke backup import on
+      // every device while the tests stayed green.
+      if (inTransaction) {
+        throw new Error('cannot start a transaction within a transaction');
       }
 
-      transactionDepth = 1;
+      inTransaction = true;
       db.exec('BEGIN');
       try {
         await task();
@@ -63,7 +61,7 @@ export function createTestDatabase(): SqlDatabase & { close: () => void } {
         db.exec('ROLLBACK');
         throw error;
       } finally {
-        transactionDepth = 0;
+        inTransaction = false;
       }
     },
   };

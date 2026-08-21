@@ -14,6 +14,9 @@ import type { SqlDatabase } from './sqlDatabase';
  *
  * Seeding is idempotent: re-running it refreshes reference rows without
  * touching anything the player has recorded.
+ *
+ * This opens its own transaction, so it must never be called from inside one:
+ * Expo SQLite issues a bare `BEGIN` and nesting fails at runtime.
  */
 export async function seedCatalog(db: SqlDatabase, now: string): Promise<void> {
   await db.withTransactionAsync(async () => {
@@ -130,8 +133,14 @@ export async function seedCatalog(db: SqlDatabase, now: string): Promise<void> {
  * Establishes the starting progression state: every variation the initial
  * program prescribes is `current`, the rest of each chain is `locked`.
  * Existing rows are left untouched so a player's progress survives re-seeding.
+ *
+ * Exported because a restored backup may predate variations this build knows
+ * about; running it afterwards gives those a starting state rather than
+ * leaving them absent from the tree.
+ *
+ * Must not be called inside a transaction — see `seedCatalog`.
  */
-async function seedProgressionStates(db: SqlDatabase, now: string): Promise<void> {
+export async function seedProgressionStates(db: SqlDatabase, now: string): Promise<void> {
   const prescribedVariationIds = new Set(
     WORKOUT_TEMPLATE_EXERCISES.map((entry) => entry.variationId),
   );
