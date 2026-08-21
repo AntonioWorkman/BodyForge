@@ -186,8 +186,52 @@ const restPausedTotal: Migration = {
   },
 };
 
+/**
+ * At most one active quest, enforced by the database.
+ *
+ * The service re-checks inside its transaction, but a unique index makes the
+ * impossible state impossible regardless of how the rows are written — a
+ * cheaper and more durable guarantee than any amount of application logic.
+ *
+ * A unique index on `status` restricted to active rows means two rows can never
+ * both hold `'active'`: they would collide on the same key.
+ */
+const singleActiveSession: Migration = {
+  version: 3,
+  name: 'single-active-session',
+  up: async (db) => {
+    // Any database that already carries more than one active session is
+    // reconciled first, keeping the most recently started and abandoning the
+    // rest, or the index could not be created.
+    await db.execAsync(`
+      UPDATE workout_session
+         SET status = 'abandoned'
+       WHERE status = 'active'
+         AND id NOT IN (
+           SELECT id FROM workout_session
+            WHERE status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+         );
+
+      DELETE FROM active_session_state
+       WHERE session_id NOT IN (
+         SELECT id FROM workout_session WHERE status = 'active'
+       );
+
+      CREATE UNIQUE INDEX idx_single_active_session
+        ON workout_session(status)
+        WHERE status = 'active';
+    `);
+  },
+};
+
 /** Ordered list of every migration this build knows how to apply. */
-export const MIGRATIONS: readonly Migration[] = [initialSchema, restPausedTotal];
+export const MIGRATIONS: readonly Migration[] = [
+  initialSchema,
+  restPausedTotal,
+  singleActiveSession,
+];
 
 /** The schema version a fully migrated database reports. */
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.reduce(

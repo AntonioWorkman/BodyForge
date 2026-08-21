@@ -4,6 +4,7 @@ import { computeAttributes } from '@/domain/attributes';
 import { countQualifyingSessions, deriveStatus } from '@/domain/mastery';
 import { coreStageForSessions, coreStageProgress } from '@/domain/coreStages';
 import type { CoreStage } from '@/domain/coreStages';
+import { PlayerAlreadyExistsError } from '@/domain/errors';
 import { todayIsoDate } from '@/domain/format';
 import { resolveLevel } from '@/domain/levels';
 import { resolvePhaseState } from '@/domain/phases';
@@ -76,6 +77,16 @@ export class PlayerService {
   }
 
   /**
+   * Discards an avatar copied during onboarding that no profile ever claimed.
+   *
+   * Only app-owned files are touched; a picker URI belongs elsewhere and is
+   * left alone.
+   */
+  async discardStoredAvatar(uri: string | null): Promise<void> {
+    await this.avatars.remove(uri);
+  }
+
+  /**
    * Replaces the player's avatar: the new image is copied into app-owned
    * storage, the profile is updated, and the previous owned file is removed.
    */
@@ -125,6 +136,12 @@ export class PlayerService {
     // onboarded player looking un-onboarded, and the retry would then duplicate
     // the starting measurements.
     await this.unitOfWork.run(async (repos) => {
+      // Checked in the same boundary as the write: onboarding must create the
+      // player, never replace one. Two overlapping calls would otherwise both
+      // see no player, and the second would reset the first's progress.
+      const existing = await repos.player.get();
+      if (existing) throw new PlayerAlreadyExistsError();
+
       await repos.player.create(profile);
       await repos.settings.update({
         unitSystem: input.unitSystem,

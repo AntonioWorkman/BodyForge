@@ -6,6 +6,8 @@ import { encodeStringArray } from '@/database/repositories/rows';
 import { seedCatalog, seedProgressionStates } from '@/database/seed';
 import { recomputeMasteryWith } from './progressionService';
 
+import type { ProgressionState, WorkoutSessionDetail } from '@/domain/types';
+
 import type { Backup, BackupValidationResult } from './backupSchema';
 import { validateBackup } from './backupSchema';
 
@@ -52,9 +54,9 @@ export class BackupService {
       // instead, and the player can set a new one.
       profile: { ...profile, avatarUri: null },
       settings,
-      sessions,
+      sessions: sessions.flatMap(toBackupSession),
       measurements,
-      progression,
+      progression: progression.map(toBackupProgression),
       templateExercises,
     };
   }
@@ -258,14 +260,26 @@ export class BackupService {
    * Erases everything the player created and returns the app to a first-launch
    * state. Reference data is re-seeded so the app remains usable afterwards.
    */
+  /**
+   * Erases everything the player created and returns the app to a first-launch
+   * state.
+   *
+   * The catalog re-seed is part of the operation, not a follow-up. It used to
+   * run after the deletion committed, so a failure there left the data already
+   * gone while the UI reported that nothing had changed. Rebuilding reference
+   * data is deterministic local work, so folding it in costs nothing and makes
+   * the reset genuinely all-or-nothing: either the app comes back usable, or
+   * the player still has everything.
+   */
   async clearAll(now = new Date()): Promise<void> {
     await this.unitOfWork.run(async (_repos, db) => {
       await this.clearPlayerTables(db);
       await db.runAsync('DELETE FROM progression_state', []);
+
+      // Joins the ambient transaction rather than opening its own, and restores
+      // the catalog plus a starting progression state for every variation.
+      await seedCatalog(db, now.toISOString());
     });
-    // Reference data is restored afterwards so the app is usable again. It is
-    // idempotent and owns no player state, so it is safe outside the boundary.
-    await seedCatalog(this.db, now.toISOString());
   }
 
   private async clearPlayerTables(db: SqlDatabase): Promise<void> {
@@ -281,4 +295,47 @@ export class BackupService {
       await db.runAsync(`DELETE FROM ${table}`, []);
     }
   }
+}
+
+/**
+ * Narrows a stored session to the completed shape a backup carries.
+ *
+ * The format is completed history only, and the compiler will not take that on
+ * trust: anything without its completion fields is dropped rather than exported
+ * as a record the importer would then reject.
+ */
+function toBackupSession(session: WorkoutSessionDetail): Backup['sessions'] {
+  if (
+    session.status !== 'completed' ||
+    session.completedAt === null ||
+    session.durationSeconds === null ||
+    session.xpAwarded === null ||
+    session.sessionNumber === null ||
+    session.performances.length === 0
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      ...session,
+      status: 'completed',
+      completedAt: session.completedAt,
+      durationSeconds: session.durationSeconds,
+      xpAwarded: session.xpAwarded,
+      sessionNumber: session.sessionNumber,
+    },
+  ];
+}
+
+/**
+ * Narrows a stored progression row to the statuses a backup may carry.
+ *
+ * `ready` is derived at read time and never persisted, so it cannot reach a
+ * document from storage — but the type allows it, and a `ready` value in a file
+ * would describe a state the app does not have. It maps back to `current`,
+ * which is what it is underneath.
+ */
+function toBackupProgression(state: ProgressionState): Backup['progression'][number] {
+  return { ...state, status: state.status === 'ready' ? 'current' : state.status };
 }

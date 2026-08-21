@@ -109,6 +109,34 @@ Development_ instead of going quiet. `confirmProgression` re-checks and throws
 
 ---
 
+## Session lifecycle
+
+| State         | Recorded work | Transient quest state | Transitions                           |
+| ------------- | ------------- | --------------------- | ------------------------------------- |
+| **active**    | Writable      | Present               | → completed, → abandoned, → discarded |
+| **completed** | Immutable     | Removed               | none                                  |
+| **abandoned** | Immutable     | Removed               | none                                  |
+| **discarded** | Deleted       | Deleted               | —                                     |
+
+The rules live in the statements, not in the services, because every one of
+these methods is reachable without going through a screen. `recordSet`,
+`removeSet`, `markPerformanceCompleted` and `saveUiState` are each scoped to the
+active session by their own SQL; `abandon` and `complete` are guarded
+transitions returning whether they applied; `deleteSession` refuses a completed
+session outright.
+
+Transient quest state belongs to a quest in progress. It is removed inside the
+completing transaction — so if completion rolls back, the resume position rolls
+back with it — and when a quest is abandoned, since an abandoned quest is never
+resumable.
+
+**At most one quest is active.** The starting command re-checks inside its
+transaction, and a partial unique index (`ON workout_session(status) WHERE
+status = 'active'`) makes a second active row impossible regardless of how it is
+written. Migration 3 reconciles any pre-existing database before creating it.
+
+---
+
 ## Data model
 
 Three entities that are easy to conflate are deliberately separate:

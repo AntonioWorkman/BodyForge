@@ -59,7 +59,7 @@ describe('onboarding is atomic', () => {
   });
 
   it('records no starting measurements when onboarding fails partway', async () => {
-    const failing = playerServiceFailingAt('INSERT OR REPLACE INTO measurement');
+    const failing = playerServiceFailingAt('INSERT INTO measurement');
 
     await expect(
       failing.createPlayer({

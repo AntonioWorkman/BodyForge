@@ -10,7 +10,6 @@ import type {
   ProgressionChain,
   ProgressionState,
   ProgressionStatus,
-  SessionStatus,
   SetPerformance,
   WorkoutSession,
   WorkoutSessionDetail,
@@ -83,8 +82,12 @@ class SqlitePlayerRepository implements PlayerRepository {
   }
 
   async create(profile: PlayerProfile): Promise<void> {
+    // A plain insert, deliberately. `INSERT OR REPLACE` would let a second
+    // onboarding silently reset XP and rotation to zero while leaving the
+    // completed history behind — internally contradictory durable state.
+    // A duplicate must fail here rather than overwrite.
     await this.db.runAsync(
-      `INSERT OR REPLACE INTO player_profile
+      `INSERT INTO player_profile
          (id, name, avatar_uri, created_at, total_xp, next_template_rotation_order)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
@@ -430,12 +433,19 @@ class SqliteSessionRepository implements SessionRepository {
     return grouped;
   }
 
-  async recordSet(input: RecordSetInput): Promise<SetPerformance> {
+  async recordSet(input: RecordSetInput): Promise<SetPerformance | null> {
     const id = `${input.performanceId}-s${input.setNumber}`;
-    await this.db.runAsync(
+    // Scoped to the active session by the statement itself. Completed history
+    // is immutable, and this is reachable without going through a screen.
+    const result = await this.db.runAsync(
       `INSERT INTO set_performance
          (id, performance_id, set_number, primary_value, secondary_value, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM exercise_performance p
+            JOIN workout_session s ON s.id = p.session_id
+           WHERE p.id = ? AND s.status = 'active'
+        )
        ON CONFLICT(performance_id, set_number) DO UPDATE SET
          primary_value = excluded.primary_value,
          secondary_value = excluded.secondary_value,
@@ -447,8 +457,11 @@ class SqliteSessionRepository implements SessionRepository {
         input.primaryValue,
         input.secondaryValue,
         input.completedAt,
+        input.performanceId,
       ],
     );
+
+    if (result.changes !== 1) return null;
 
     return {
       id,
@@ -460,18 +473,32 @@ class SqliteSessionRepository implements SessionRepository {
     };
   }
 
-  async removeSet(performanceId: string, setNumber: number): Promise<void> {
-    await this.db.runAsync(
-      'DELETE FROM set_performance WHERE performance_id = ? AND set_number = ?',
+  async removeSet(performanceId: string, setNumber: number): Promise<boolean> {
+    const result = await this.db.runAsync(
+      `DELETE FROM set_performance
+        WHERE performance_id = ? AND set_number = ?
+          AND performance_id IN (
+            SELECT p.id FROM exercise_performance p
+              JOIN workout_session s ON s.id = p.session_id
+             WHERE s.status = 'active'
+          )`,
       [performanceId, setNumber],
     );
+    return result.changes === 1;
   }
 
-  async markPerformanceCompleted(performanceId: string, completedAt: string | null): Promise<void> {
-    await this.db.runAsync('UPDATE exercise_performance SET completed_at = ? WHERE id = ?', [
-      completedAt,
-      performanceId,
-    ]);
+  async markPerformanceCompleted(
+    performanceId: string,
+    completedAt: string | null,
+  ): Promise<boolean> {
+    const result = await this.db.runAsync(
+      `UPDATE exercise_performance
+          SET completed_at = ?
+        WHERE id = ?
+          AND session_id IN (SELECT id FROM workout_session WHERE status = 'active')`,
+      [completedAt, performanceId],
+    );
+    return result.changes === 1;
   }
 
   async complete(input: CompleteSessionInput): Promise<boolean> {
@@ -493,17 +520,34 @@ class SqliteSessionRepository implements SessionRepository {
     return result.changes === 1;
   }
 
-  async setStatus(sessionId: string, status: SessionStatus): Promise<void> {
-    await this.db.runAsync('UPDATE workout_session SET status = ? WHERE id = ?', [
-      status,
-      sessionId,
-    ]);
+  async abandon(sessionId: string): Promise<boolean> {
+    // Only an active session may be abandoned: a completed one must never be
+    // reclassified, and an already-abandoned one is a no-op.
+    const result = await this.db.runAsync(
+      "UPDATE workout_session SET status = 'abandoned' WHERE id = ? AND status = 'active'",
+      [sessionId],
+    );
+    return result.changes === 1;
   }
 
-  async deleteSession(sessionId: string): Promise<void> {
+  async clearUiState(sessionId: string): Promise<void> {
+    await this.db.runAsync('DELETE FROM active_session_state WHERE session_id = ?', [sessionId]);
+  }
+
+  async deleteSession(sessionId: string): Promise<boolean> {
+    // Completed sessions are history and are never discardable this way. The
+    // check shares the transaction with the deletes below.
+    let deleted = false;
+
     // Child rows are removed explicitly because foreign keys are not enforced
     // by default on every SQLite build the app may run against.
     await this.db.withTransactionAsync(async () => {
+      const target = await this.db.getFirstAsync<{ status: string }>(
+        'SELECT status FROM workout_session WHERE id = ?',
+        [sessionId],
+      );
+      if (!target || target.status === 'completed') return;
+      deleted = true;
       await this.db.runAsync(
         `DELETE FROM set_performance WHERE performance_id IN
            (SELECT id FROM exercise_performance WHERE session_id = ?)`,
@@ -513,14 +557,21 @@ class SqliteSessionRepository implements SessionRepository {
       await this.db.runAsync('DELETE FROM active_session_state WHERE session_id = ?', [sessionId]);
       await this.db.runAsync('DELETE FROM workout_session WHERE id = ?', [sessionId]);
     });
+
+    return deleted;
   }
 
-  async saveUiState(state: ActiveSessionUiState): Promise<void> {
-    await this.db.runAsync(
+  async saveUiState(state: ActiveSessionUiState): Promise<boolean> {
+    // UI state belongs to an active quest. Writing it for a completed or
+    // missing session would leave a row nothing can ever consume.
+    const result = await this.db.runAsync(
       `INSERT INTO active_session_state
          (session_id, current_position, rest_started_at, rest_duration_seconds,
           rest_paused_at, rest_paused_total_ms, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM workout_session WHERE id = ? AND status = 'active'
+        )
        ON CONFLICT(session_id) DO UPDATE SET
          current_position = excluded.current_position,
          rest_started_at = excluded.rest_started_at,
@@ -536,8 +587,10 @@ class SqliteSessionRepository implements SessionRepository {
         state.restPausedAt,
         Math.max(0, Math.round(state.restPausedTotalMs)),
         state.updatedAt,
+        state.sessionId,
       ],
     );
+    return result.changes === 1;
   }
 
   async getUiState(sessionId: string): Promise<ActiveSessionUiState | null> {
@@ -597,7 +650,10 @@ class SqliteMeasurementRepository implements MeasurementRepository {
 
   async add(measurement: Measurement): Promise<void> {
     await this.db.runAsync(
-      `INSERT OR REPLACE INTO measurement (id, type, value, recorded_on, created_at, note)
+      // Identifiers are generated per measurement, so a collision means a bug,
+      // not an update. Failing is better than silently replacing a different
+      // recorded measurement.
+      `INSERT INTO measurement (id, type, value, recorded_on, created_at, note)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
         measurement.id,

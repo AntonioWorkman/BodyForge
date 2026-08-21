@@ -158,7 +158,8 @@ describe('backup export and import', () => {
     const result = validateBackup(JSON.stringify(document));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.join(' ')).toMatch(/completion time/);
+    // The schema now requires it, so it is rejected before the structural pass.
+    expect(result.errors.join(' ')).toMatch(/completedAt/);
   });
 
   it('rejects sets that claim to belong to another exercise', async () => {

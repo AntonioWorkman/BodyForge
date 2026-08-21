@@ -77,10 +77,14 @@ expo-sqlite
 - **`totalXp` is the stored progression value.** Level, phase and Core stage are derived, never stored, so no two screens can disagree.
 - **One transaction per command.** A service command that writes to more than one table runs inside a single unit of work, and rolls back entirely on failure.
 - **Preconditions are checked at the same consistency boundary as the mutation.** Commands re-read their state inside the transaction and apply conditional state transitions, so a duplicate or concurrent caller is rejected by the database rather than by timing.
+- **At most one quest is active.** Enforced both by the starting command and by a unique index on active sessions, so the state is impossible rather than merely avoided.
+- **Onboarding creates a player, it never replaces one.** A second attempt is refused; XP, rotation and history cannot be reset by re-running setup.
+- **The session lifecycle is enforced below the UI.** Completed history accepts no new sets, cannot be discarded through an active-quest command and cannot be reclassified. Transient quest state exists only while a quest is active, and is removed when it completes or is abandoned.
 - **Progression is explicit.** The app cannot see your form; it presents the technique standard and waits for you to confirm.
 - **Phase gates are enforced below the UI.** A disabled button is not a correctness boundary.
-- **Backup JSON is untrusted input.** It is fully validated — including every uniqueness and parent-reference rule the schema enforces — before any destructive write begins.
+- **Backup JSON is untrusted input.** Validation enforces BodyForge's own invariants, not just what SQLite would accept: completed history only, required completion fields, parseable timestamps, coherent prescriptions, and one current variation per chain. Nothing is written until the whole document passes.
 - **Avatar media is not portable in JSON.** The format carries no image data, so an imported backup never restores a path from another installation.
+- **Destructive operations report truthfully.** A reset either completes and leaves a usable first-launch state, or changes nothing — it never reports failure after deleting.
 
 ## Training rules
 

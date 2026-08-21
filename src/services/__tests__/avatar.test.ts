@@ -69,6 +69,23 @@ describe('avatar storage', () => {
     fresh.close();
   });
 
+  it('discards an onboarding avatar that no profile ever claimed', async () => {
+    const fresh = await createHarness();
+    const owned = await fresh.player.storeAvatar('file:///tmp/picker/abandoned.jpg');
+    expect(fresh.avatars.stored).toEqual([owned]);
+
+    await fresh.player.discardStoredAvatar(owned);
+
+    expect(fresh.avatars.stored).toEqual([]);
+    expect(fresh.avatars.removed).toContain(owned);
+    fresh.close();
+  });
+
+  it('does not touch a picker path when discarding', async () => {
+    await harness.player.discardStoredAvatar('file:///tmp/picker/not-ours.jpg');
+    expect(harness.avatars.removed).toEqual([]);
+  });
+
   it('leaves the profile without an avatar when none was chosen', async () => {
     expect((await harness.repositories.player.get())?.avatarUri).toBeNull();
     expect(harness.avatars.stored).toEqual([]);

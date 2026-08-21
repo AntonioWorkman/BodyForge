@@ -79,3 +79,18 @@ export class SessionNotActiveError extends Error {
     super(`This quest is no longer active (${status}).`);
   }
 }
+
+/**
+ * A player already exists, so onboarding cannot run again.
+ *
+ * There is exactly one player per installation. Re-running onboarding would
+ * reset XP and rotation while leaving completed history in place, which is not
+ * a state the app can be in.
+ */
+export class PlayerAlreadyExistsError extends Error {
+  override readonly name = 'PlayerAlreadyExistsError';
+
+  constructor() {
+    super('A player already exists on this device.');
+  }
+}

@@ -11,7 +11,6 @@ import type {
   ProgressionChain,
   ProgressionState,
   ProgressionStatus,
-  SessionStatus,
   SetPerformance,
   WorkoutSession,
   WorkoutSessionDetail,
@@ -93,9 +92,17 @@ export interface SessionRepository {
    * within each group. One round trip instead of one per variation.
    */
   listCompletedPerformancesByVariation(): Promise<Map<string, ExercisePerformanceWithSets[]>>;
-  recordSet(input: RecordSetInput): Promise<SetPerformance>;
-  removeSet(performanceId: string, setNumber: number): Promise<void>;
-  markPerformanceCompleted(performanceId: string, completedAt: string | null): Promise<void>;
+  /**
+   * Records a set, but only on an exercise belonging to the active session.
+   *
+   * Returns null when it does not — completed history is immutable, and these
+   * methods are reachable below the UI.
+   */
+  recordSet(input: RecordSetInput): Promise<SetPerformance | null>;
+  /** Removes a set from the active session only. False if it did not apply. */
+  removeSet(performanceId: string, setNumber: number): Promise<boolean>;
+  /** Marks an exercise complete on the active session only. */
+  markPerformanceCompleted(performanceId: string, completedAt: string | null): Promise<boolean>;
   /**
    * Completes a session, but only while it is still active.
    *
@@ -104,9 +111,23 @@ export interface SessionRepository {
    * rejected by the database rather than by timing.
    */
   complete(input: CompleteSessionInput): Promise<boolean>;
-  setStatus(sessionId: string, status: SessionStatus): Promise<void>;
-  deleteSession(sessionId: string): Promise<void>;
-  saveUiState(state: ActiveSessionUiState): Promise<void>;
+  /** Removes the transient UI state belonging to a session. */
+  clearUiState(sessionId: string): Promise<void>;
+  /**
+   * Abandons the active session. Returns false if it was not active — a
+   * completed session must never be reopened or reclassified.
+   */
+  abandon(sessionId: string): Promise<boolean>;
+  /**
+   * Deletes a session and everything under it, unless it has been completed.
+   * Recorded history is not discardable through an active-quest command.
+   */
+  deleteSession(sessionId: string): Promise<boolean>;
+  /**
+   * Stores transient UI state. Applies only while the session is active: UI
+   * state belongs to a quest in progress and is meaningless afterwards.
+   */
+  saveUiState(state: ActiveSessionUiState): Promise<boolean>;
   getUiState(sessionId: string): Promise<ActiveSessionUiState | null>;
 }
 

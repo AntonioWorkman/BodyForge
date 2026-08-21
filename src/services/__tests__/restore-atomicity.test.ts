@@ -155,6 +155,56 @@ describe('restore atomicity', () => {
     expect(offer?.to.id).toBe('var-push-up-slow');
   });
 
+  describe('reset', () => {
+    it('keeps everything when the catalog rebuild fails', async () => {
+      const before = await seedExistingPlayer();
+
+      // The last required step of the reset. It used to run after the deletion
+      // committed, so failing here destroyed the data while the UI said
+      // "Your data has not been changed."
+      const failing = backupFailingAt('INSERT INTO exercise_variation');
+      await expect(failing.clearAll()).rejects.toThrow('injected failure');
+
+      expect(await harness.repositories.player.get()).toEqual(before.profile);
+      expect(await harness.repositories.sessions.listCompleted()).toEqual(before.sessions);
+      expect(await harness.repositories.measurements.list()).toEqual(before.measurements);
+      expect(await harness.repositories.progression.list()).toEqual(before.progression);
+    });
+
+    it('keeps everything when clearing player tables fails', async () => {
+      const before = await seedExistingPlayer();
+
+      const failing = backupFailingAt('DELETE FROM measurement');
+      await expect(failing.clearAll()).rejects.toThrow('injected failure');
+
+      expect(await harness.repositories.player.get()).toEqual(before.profile);
+      expect(await harness.repositories.measurements.list()).toEqual(before.measurements);
+    });
+
+    it('leaves a usable first-launch state when it succeeds', async () => {
+      await seedExistingPlayer();
+      await harness.backup.clearAll();
+
+      expect(await harness.repositories.player.get()).toBeNull();
+      expect(await harness.repositories.sessions.countCompleted()).toBe(0);
+      expect(await harness.repositories.measurements.list()).toEqual([]);
+
+      // Reference data is back, so onboarding and training work immediately.
+      const templates = await harness.repositories.catalog.listTemplates();
+      expect(templates).toHaveLength(2);
+      const states = await harness.repositories.progression.list();
+      expect(states.filter((state) => state.status === 'current').length).toBeGreaterThan(0);
+
+      await harness.player.createPlayer({
+        name: 'Fresh',
+        avatarUri: null,
+        unitSystem: 'metric',
+      });
+      const plan = await harness.workouts.getNextPlan();
+      expect(plan?.entries).toHaveLength(7);
+    });
+  });
+
   it('completes the whole restore when nothing fails', async () => {
     await seedExistingPlayer();
     const json = await backupForOtherPlayer();

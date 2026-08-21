@@ -159,29 +159,41 @@ export class WorkoutService {
    * returned unchanged — a player can only be inside one quest at a time, and
    * silently discarding the old one would lose recorded sets.
    */
+  /**
+   * Starts a session from the given plan.
+   *
+   * At most one quest may be active at a time. That is checked inside the
+   * transaction — checking first and creating afterwards let two callers both
+   * see no active quest and both create one — and the database enforces it
+   * independently through a unique index on active sessions.
+   *
+   * If a quest is already active it is returned unchanged rather than replaced:
+   * discarding it would lose recorded sets.
+   */
   async startSession(plan: WorkoutPlan, now = new Date()): Promise<WorkoutSessionDetail> {
-    const existing = await this.repositories.sessions.findActive();
-    if (existing) return existing;
-
-    const completedCount = await this.repositories.sessions.countCompleted();
     const sessionId = createId('sess');
 
-    const performances: ExercisePerformance[] = plan.entries.map((entry, index) => ({
-      id: `${sessionId}-p${index}`,
-      sessionId,
-      position: index,
-      variationId: entry.variation.id,
-      exerciseName: entry.exercise.name,
-      variationName: entry.variation.name,
-      measurementKind: entry.variation.measurementKind,
-      prescribed: entry.prescription,
-      completedAt: null,
-    }));
+    const created = await this.unitOfWork.run(async (repos) => {
+      // Re-checked here, not before the queue: a caller that waited its turn
+      // must see whatever the command ahead of it committed.
+      const existing = await repos.sessions.findActive();
+      if (existing) return existing;
 
-    // One transaction: a durable session created without its UI state would
-    // start the player mid-quest with no recorded position. The resume path can
-    // recover from that, but it should not have to.
-    await this.unitOfWork.run(async (repos) => {
+      // Read in the same boundary so the phase reflects the committed count.
+      const completedCount = await repos.sessions.countCompleted();
+
+      const performances: ExercisePerformance[] = plan.entries.map((entry, index) => ({
+        id: `${sessionId}-p${index}`,
+        sessionId,
+        position: index,
+        variationId: entry.variation.id,
+        exerciseName: entry.exercise.name,
+        variationName: entry.variation.name,
+        measurementKind: entry.variation.measurementKind,
+        prescribed: entry.prescription,
+        completedAt: null,
+      }));
+
       await repos.sessions.create({
         session: {
           id: sessionId,
@@ -199,6 +211,8 @@ export class WorkoutService {
         performances,
       });
 
+      // The session and its UI state are one unit: a durable session without a
+      // recorded position would start the player mid-quest with none.
       await repos.sessions.saveUiState({
         sessionId,
         currentPosition: 0,
@@ -208,10 +222,12 @@ export class WorkoutService {
         restPausedTotalMs: 0,
         updatedAt: now.toISOString(),
       });
+
+      const session = await repos.sessions.findById(sessionId);
+      if (!session) throw new Error('Session could not be created');
+      return session;
     });
 
-    const created = await this.repositories.sessions.findById(sessionId);
-    if (!created) throw new Error('Session could not be created');
     return created;
   }
 
@@ -223,13 +239,19 @@ export class WorkoutService {
     secondaryValue: number | null,
     now = new Date(),
   ): Promise<void> {
-    await this.repositories.sessions.recordSet({
+    const recorded = await this.repositories.sessions.recordSet({
       performanceId,
       setNumber,
       primaryValue: Math.max(0, Math.round(primaryValue)),
       secondaryValue: secondaryValue === null ? null : Math.max(0, Math.round(secondaryValue)),
       completedAt: now.toISOString(),
     });
+
+    // Refused when the exercise does not belong to the active quest. Silently
+    // doing nothing would look to the player like the set was logged.
+    if (!recorded) {
+      throw new SessionNotActiveError(performanceId, 'not active');
+    }
   }
 
   async undoSet(performanceId: string, setNumber: number): Promise<void> {
@@ -250,14 +272,29 @@ export class WorkoutService {
     return this.repositories.sessions.getUiState(sessionId);
   }
 
-  /** Abandons an active session, keeping the sets that were logged. */
-  async abandonSession(sessionId: string): Promise<void> {
-    await this.repositories.sessions.setStatus(sessionId, 'abandoned');
+  /**
+   * Abandons the active session, keeping the sets that were logged.
+   *
+   * Its UI state goes with it: an abandoned quest is never resumable, so the
+   * row would only be able to mislead a later resume. Returns false if the
+   * session was not active — a completed one is never reclassified.
+   */
+  async abandonSession(sessionId: string): Promise<boolean> {
+    return this.unitOfWork.run(async (repos) => {
+      const abandoned = await repos.sessions.abandon(sessionId);
+      if (abandoned) await repos.sessions.clearUiState(sessionId);
+      return abandoned;
+    });
   }
 
-  /** Discards an active session entirely, including its recorded sets. */
-  async discardSession(sessionId: string): Promise<void> {
-    await this.repositories.sessions.deleteSession(sessionId);
+  /**
+   * Discards a session entirely, including its recorded sets and UI state.
+   *
+   * Refuses a completed session: recorded history is not discardable through an
+   * active-quest command.
+   */
+  async discardSession(sessionId: string): Promise<boolean> {
+    return this.repositories.sessions.deleteSession(sessionId);
   }
 
   /**
@@ -360,6 +397,11 @@ export class WorkoutService {
           Math.max(1, templates.length),
         ),
       });
+
+      // The quest is finished, so its transient UI state has nothing left to
+      // describe. Removed inside the transaction: if completion rolls back, the
+      // resume state must survive with it.
+      await repos.sessions.clearUiState(sessionId);
 
       const progressionsAvailable = await this.refreshMasteryCounts(repos, session.performances);
 

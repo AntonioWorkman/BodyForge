@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { APP_CONFIG } from '@/config/app.config';
+import { VARIATIONS_BY_ID } from '@/domain/program/catalog';
 
 /**
  * Backup format.
@@ -11,17 +12,38 @@ import { APP_CONFIG } from '@/config/app.config';
  * partially restored.
  */
 
-const isoTimestamp = z.string().min(1);
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date');
+/**
+ * A timestamp that actually parses.
+ *
+ * A non-empty string is not enough: a malformed value carried into the app
+ * becomes `NaN` in every comparison and sort it touches, silently reordering
+ * history rather than failing.
+ */
+const isoTimestamp = z
+  .string()
+  .min(1)
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a valid timestamp');
 
-const prescriptionSchema = z.object({
-  sets: z.number().int().min(0).max(50),
-  targetMin: z.number().min(0).max(10_000),
-  targetMax: z.number().min(0).max(10_000),
-  restSeconds: z.number().int().min(0).max(3_600),
-  tempo: z.string().nullable(),
-  cues: z.array(z.string()),
-});
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date')
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a real calendar date');
+
+const prescriptionSchema = z
+  .object({
+    // A recorded exercise was prescribed at least one set; zero-set
+    // prescriptions are not a concept this app has.
+    sets: z.number().int().min(1).max(50),
+    targetMin: z.number().min(0).max(10_000),
+    targetMax: z.number().min(0).max(10_000),
+    restSeconds: z.number().int().min(0).max(3_600),
+    tempo: z.string().nullable(),
+    cues: z.array(z.string()),
+  })
+  .refine(
+    (prescription) => prescription.targetMin <= prescription.targetMax,
+    'A prescription cannot ask for more at the bottom of its range than the top',
+  );
 
 const setSchema = z.object({
   id: z.string().min(1),
@@ -45,19 +67,31 @@ const performanceSchema = z.object({
   sets: z.array(setSchema),
 });
 
+/**
+ * Sessions in a portable backup are completed history, and nothing else.
+ *
+ * The format carries no `active_session_state`, so importing an active session
+ * would create a phantom quest the app believes is resumable but has no
+ * position for — and an abandoned session is not history worth restoring. Both
+ * are rejected rather than silently reclassified.
+ */
 const sessionSchema = z.object({
   id: z.string().min(1),
   templateId: z.string().min(1),
   templateName: z.string().min(1),
   templateFocus: z.string(),
   phaseId: z.enum(['awakening', 'development', 'ascension']),
-  status: z.enum(['active', 'completed', 'abandoned']),
+  status: z.literal('completed', {
+    message: 'A backup carries completed sessions only',
+  }),
   startedAt: isoTimestamp,
-  completedAt: isoTimestamp.nullable(),
-  durationSeconds: z.number().int().min(0).nullable(),
-  xpAwarded: z.number().int().min(0).nullable(),
-  sessionNumber: z.number().int().min(1).nullable(),
-  performances: z.array(performanceSchema),
+  // Every completed-session field is required: null here would restore history
+  // the app treats as finished but cannot describe.
+  completedAt: isoTimestamp,
+  durationSeconds: z.number().int().min(0),
+  xpAwarded: z.number().int().min(0),
+  sessionNumber: z.number().int().min(1),
+  performances: z.array(performanceSchema).min(1),
 });
 
 const measurementSchema = z.object({
@@ -71,7 +105,11 @@ const measurementSchema = z.object({
 
 const progressionStateSchema = z.object({
   variationId: z.string().min(1),
-  status: z.enum(['locked', 'available', 'current', 'ready', 'mastered']),
+  // `ready` is derived from qualifying sessions at read time, never stored, so
+  // a document claiming it is describing a state this app does not persist.
+  status: z.enum(['locked', 'available', 'current', 'mastered'], {
+    message: 'Progression status must be locked, available, current or mastered',
+  }),
   qualifyingSessions: z.number().int().min(0).max(10_000),
   startedAt: isoTimestamp.nullable(),
   masteredAt: isoTimestamp.nullable(),
@@ -192,7 +230,6 @@ export function validateBackup(raw: string): BackupValidationResult {
  * - `progression_state.variation_id` primary key
  * - `workout_template_exercise.id` primary key
  * - performance→session and set→performance parent references
- * - completed sessions carrying a completion time
  *
  * References to catalog variations are deliberately *not* checked: a backup may
  * legitimately predate or postdate this build's catalog, and the importer skips
@@ -214,10 +251,6 @@ function checkReferentialIntegrity(backup: Backup): string[] {
   for (const session of backup.sessions) {
     if (duplicate('session', session.id)) {
       errors.push(`sessions: duplicate session identifier "${session.id}".`);
-    }
-
-    if (session.status === 'completed' && !session.completedAt) {
-      errors.push(`sessions.${session.id}: completed session has no completion time.`);
     }
 
     for (const performance of session.performances) {
@@ -249,6 +282,22 @@ function checkReferentialIntegrity(backup: Backup): string[] {
     }
   }
 
+  // Session numbers are the ordinal of a completed session, so they cannot
+  // repeat and cannot exceed how many completed sessions the document holds.
+  for (const session of backup.sessions) {
+    if (duplicate('sessionNumber', String(session.sessionNumber))) {
+      errors.push(`sessions: two completed sessions both numbered ${session.sessionNumber}.`);
+    }
+    if (session.sessionNumber > backup.sessions.length) {
+      errors.push(
+        `sessions.${session.id}: numbered ${session.sessionNumber} but the backup holds ${backup.sessions.length}.`,
+      );
+    }
+    if (Date.parse(session.completedAt) < Date.parse(session.startedAt)) {
+      errors.push(`sessions.${session.id}: completed before it started.`);
+    }
+  }
+
   for (const measurement of backup.measurements) {
     if (duplicate('measurement', measurement.id)) {
       errors.push(`measurements: duplicate measurement identifier "${measurement.id}".`);
@@ -267,5 +316,35 @@ function checkReferentialIntegrity(backup: Backup): string[] {
     }
   }
 
+  // A chain is a ladder: exactly one variation on it is the one being trained.
+  // Two `current` entries would leave the tree with two live nodes and the
+  // template prescribing whichever happened to be written last.
+  const currentPerChain = new Map<string, string[]>();
+  for (const state of backup.progression) {
+    if (state.status !== 'current') continue;
+    const chainId = chainOf(state.variationId);
+    if (!chainId) continue;
+    const holders = currentPerChain.get(chainId) ?? [];
+    holders.push(state.variationId);
+    currentPerChain.set(chainId, holders);
+  }
+
+  for (const [chainId, holders] of currentPerChain) {
+    if (holders.length > 1) {
+      errors.push(`progression: chain "${chainId}" has ${holders.length} current variations.`);
+    }
+  }
+
   return errors.slice(0, 8);
+}
+
+/**
+ * The chain a variation belongs to, or null if this build does not know it.
+ *
+ * Unknown variations are deliberately not an error: a backup may predate or
+ * postdate this build's catalog, and the importer skips what it cannot place
+ * rather than rejecting the whole document.
+ */
+function chainOf(variationId: string): string | null {
+  return VARIATIONS_BY_ID.get(variationId)?.chainId ?? null;
 }

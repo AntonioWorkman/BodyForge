@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Button, Screen, SectionLabel, Text } from '@/components';
 import { APP_CONFIG } from '@/config/app.config';
 import { colors, layout, radius, spacing } from '@/design';
+import { PlayerAlreadyExistsError } from '@/domain/errors';
 import { toStorageValue } from '@/domain/units';
 import type { UnitSystem } from '@/domain/types';
 import { Core } from '@/core';
@@ -33,6 +34,20 @@ export function OnboardingScreen() {
   const [bodyweight, setBodyweight] = useState('');
   const [waist, setWaist] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Onboarding is reachable by route, so it checks for itself rather than
+  // trusting the caller. A player already exists means this screen has nothing
+  // to do — and running it again would be refused by the service anyway.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const existing = await services.player.getProfile();
+      if (!cancelled && existing) router.replace('/(tabs)');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router, services]);
 
   const pickAvatar = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -84,8 +99,17 @@ export function OnboardingScreen() {
 
       fireHaptic('progressionUnlocked');
       router.replace('/(tabs)');
-    } catch {
+    } catch (error) {
       setSubmitting(false);
+      // Someone already onboarded on this device — leave their data alone and
+      // send this screen where it belongs.
+      if (error instanceof PlayerAlreadyExistsError) {
+        // Their avatar copy has no profile to belong to, so it is cleaned up
+        // rather than left orphaned in app storage.
+        await services.player.discardStoredAvatar(avatarUri);
+        router.replace('/(tabs)');
+        return;
+      }
       Alert.alert('Setup failed', 'Your profile could not be saved. Please try again.');
     }
   }, [avatarUri, bodyweight, name, router, services, submitting, unitSystem, waist]);
