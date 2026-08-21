@@ -130,7 +130,7 @@ export function QuestCompleteScreen() {
           value={`${summary.completedExercises} / ${summary.totalExercises}`}
           label="Exercises"
         />
-        <Fact value={String(summary.workingSets)} label="Working sets" />
+        <Fact value={String(summary.workingSets)} label="Sets" />
         <Fact value={formatDuration(summary.durationSeconds)} label="Duration" />
       </Animated.View>
 

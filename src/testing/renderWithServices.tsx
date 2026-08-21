@@ -52,13 +52,28 @@ export async function renderWithServices(
 
   useSettingsStore.getState().hydrate(await repositories.settings.get());
 
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <SafeAreaProvider initialMetrics={METRICS}>
-      <TestServicesProvider services={services}>{children}</TestServicesProvider>
-    </SafeAreaProvider>
-  );
-
-  const result = await render(ui(services), { wrapper });
+  const result = await render(ui(services), { wrapper: wrapperFor(services) });
 
   return { services, db, result, cleanup: () => db.close() };
+}
+
+/**
+ * Renders another screen over an existing harness's database, which is how a
+ * test reproduces navigating between screens or relaunching the app.
+ */
+export async function renderOverServices(
+  harness: RenderedWithServices,
+  ui: ReactElement,
+): Promise<Awaited<ReturnType<typeof render>>> {
+  return render(ui, { wrapper: wrapperFor(harness.services) });
+}
+
+function wrapperFor(services: AppServices) {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <SafeAreaProvider initialMetrics={METRICS}>
+        <TestServicesProvider services={services}>{children}</TestServicesProvider>
+      </SafeAreaProvider>
+    );
+  };
 }
