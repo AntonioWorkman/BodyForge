@@ -42,7 +42,8 @@
         {
           "photosPermission": "BodyForge uses your photo library only to set a local player avatar. The image never leaves your device."
         }
-      ]
+      ],
+      "expo-splash-screen"
     ],
     "experiments": {
       "typedRoutes": true
