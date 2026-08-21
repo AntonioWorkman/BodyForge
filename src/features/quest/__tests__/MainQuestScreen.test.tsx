@@ -156,8 +156,6 @@ describe('Main Quest', () => {
   });
 
   it('states plainly that there is no previous record on a first session', () => {
-    expect(
-      screen.getByText('No previous record — this session sets your baseline.'),
-    ).toBeTruthy();
+    expect(screen.getByText('No previous record — this session sets your baseline.')).toBeTruthy();
   });
 });

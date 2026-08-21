@@ -49,7 +49,13 @@ export function upcomingRotation(
 export type Directive =
   | { kind: 'first-quest'; templateId: string; templateName: string; focus: string }
   | { kind: 'quest'; templateId: string; templateName: string; focus: string }
-  | { kind: 'resume'; sessionId: string; templateName: string; exerciseIndex: number; exerciseCount: number }
+  | {
+      kind: 'resume';
+      sessionId: string;
+      templateName: string;
+      exerciseIndex: number;
+      exerciseCount: number;
+    }
   | { kind: 'recovery'; suggestion: string; readyAt: string | null };
 
 /** Hours after a session during which the System suggests recovery instead. */

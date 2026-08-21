@@ -172,8 +172,8 @@ export function QuestCompleteScreen() {
         <Animated.View entering={enter(3)} style={styles.section}>
           {summary.improvements > 0 ? (
             <Text variant="bodyStrong" color="text">
-              {summary.improvements}{' '}
-              {summary.improvements === 1 ? 'improvement' : 'improvements'} on your last session
+              {summary.improvements} {summary.improvements === 1 ? 'improvement' : 'improvements'}{' '}
+              on your last session
             </Text>
           ) : null}
 
@@ -230,7 +230,12 @@ export function QuestCompleteScreen() {
       </Animated.View>
 
       <Animated.View entering={enter(7)}>
-        <Button label="Return to System" onPress={finish} size="large" testID="quest-complete-done" />
+        <Button
+          label="Return to System"
+          onPress={finish}
+          size="large"
+          testID="quest-complete-done"
+        />
       </Animated.View>
     </Screen>
   );

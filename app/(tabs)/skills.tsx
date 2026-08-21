@@ -1,9 +1,3 @@
-import { Screen, Text } from '@/components';
+import { SkillsScreen } from '@/features/skills/SkillsScreen';
 
-export default function SkillsRoute() {
-  return (
-    <Screen tabBarInset>
-      <Text variant="displaySmall">Skills</Text>
-    </Screen>
-  );
-}
+export default SkillsScreen;

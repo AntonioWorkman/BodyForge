@@ -16,15 +16,17 @@ describe('active workout recovery', () => {
 
   it('finds the active session after the app is restarted', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const started = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const started = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
 
     await harness.workouts.recordSet(started.performances[0]!.id, 1, 9, 9);
     await harness.workouts.recordSet(started.performances[0]!.id, 2, 8, 8);
 
     // A fresh service over the same database stands in for a relaunch.
-    const { WorkoutService } = await jest.requireActual<
-      typeof import('../workoutService')
-    >('../workoutService');
+    const { WorkoutService } =
+      await jest.requireActual<typeof import('../workoutService')>('../workoutService');
     const fresh = new WorkoutService(harness.repositories);
 
     const recovered = await fresh.getActiveSession();
@@ -35,7 +37,10 @@ describe('active workout recovery', () => {
 
   it('persists each set as it is logged, not at the end', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
 
     await harness.workouts.recordSet(session.performances[0]!.id, 1, 10, 10);
 
@@ -46,7 +51,10 @@ describe('active workout recovery', () => {
 
   it('restores which exercise was on screen and the rest timer anchor', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
 
     await harness.workouts.saveUiState({
       sessionId: session.id,
@@ -76,7 +84,10 @@ describe('active workout recovery', () => {
 
   it('undoing a set removes it from storage', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     const performance = session.performances[0]!;
 
     await harness.workouts.recordSet(performance.id, 1, 9, 9);
@@ -88,7 +99,10 @@ describe('active workout recovery', () => {
 
   it('discarding a session removes it and its sets entirely', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     await harness.workouts.recordSet(session.performances[0]!.id, 1, 9, 9);
 
     await harness.workouts.discardSession(session.id);
@@ -103,7 +117,10 @@ describe('active workout recovery', () => {
 
   it('an abandoned session keeps its sets but leaves no active quest', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     await harness.workouts.recordSet(session.performances[0]!.id, 1, 9, 9);
     await harness.workouts.abandonSession(session.id);
 
@@ -115,7 +132,10 @@ describe('active workout recovery', () => {
 
   it('an abandoned session is excluded from history and XP', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     await harness.workouts.recordSet(session.performances[0]!.id, 1, 9, 9);
     await harness.workouts.abandonSession(session.id);
 

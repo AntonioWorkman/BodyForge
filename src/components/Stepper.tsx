@@ -141,7 +141,12 @@ function StepperControl({
         disabled && styles.controlDisabled,
       ]}
     >
-      <Glyph name={glyph} size={26} color={disabled ? 'textDisabled' : 'highlight'} strokeWidth={2} />
+      <Glyph
+        name={glyph}
+        size={26}
+        color={disabled ? 'textDisabled' : 'highlight'}
+        strokeWidth={2}
+      />
     </Pressable>
   );
 }

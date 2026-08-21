@@ -1,4 +1,4 @@
-/* eslint-env jest */
+// Jest globals are declared for this file in eslint.config.js.
 
 // React needs this flag to allow `act` in a concurrent test renderer.
 global.IS_REACT_ACT_ENVIRONMENT = true;

@@ -52,11 +52,7 @@ export function IconButton({
         style,
       ]}
     >
-      <Glyph
-        name={name}
-        size={size}
-        color={disabled ? 'textDisabled' : TONE_COLORS[tone]}
-      />
+      <Glyph name={name} size={size} color={disabled ? 'textDisabled' : TONE_COLORS[tone]} />
     </Pressable>
   );
 }

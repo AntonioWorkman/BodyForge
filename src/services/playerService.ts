@@ -1,11 +1,18 @@
 import { APP_CONFIG } from '@/config/app.config';
 import type { RepositoryBundle } from '@/database/repositories/interfaces';
+import { computeAttributes } from '@/domain/attributes';
 import { coreStageForSessions, coreStageProgress } from '@/domain/coreStages';
 import type { CoreStage } from '@/domain/coreStages';
 import { resolveLevel } from '@/domain/levels';
 import { resolvePhaseState } from '@/domain/phases';
 import { weeklyProgress } from '@/domain/schedule';
-import type { AppSettings, LevelState, PhaseState, PlayerProfile } from '@/domain/types';
+import type {
+  AppSettings,
+  AttributeValue,
+  LevelState,
+  PhaseState,
+  PlayerProfile,
+} from '@/domain/types';
 
 import { createId } from './ids';
 
@@ -90,12 +97,42 @@ export class PlayerService {
     return profile;
   }
 
+  /**
+   * The four attributes, computed from recorded sessions and confirmed
+   * progressions. Nothing here is estimated or invented.
+   */
+  async getAttributes(now = new Date()): Promise<AttributeValue[]> {
+    const [sessions, progressionStates, variations, settings] = await Promise.all([
+      this.repositories.sessions.listCompleted(),
+      this.repositories.progression.list(),
+      this.repositories.catalog.listVariations(),
+      this.repositories.settings.get(),
+    ]);
+
+    return computeAttributes({
+      sessions,
+      progressionStates,
+      variationsById: new Map(variations.map((variation) => [variation.id, variation])),
+      sessionsPerWeekTarget: settings.sessionsPerWeekTarget,
+      now,
+    });
+  }
+
   async getProfile(): Promise<PlayerProfile | null> {
     return this.repositories.player.get();
   }
 
   async updateProfile(patch: Partial<Pick<PlayerProfile, 'name' | 'avatarUri'>>): Promise<void> {
     await this.repositories.player.update(patch);
+  }
+
+  async getSettings(): Promise<AppSettings> {
+    return this.repositories.settings.get();
+  }
+
+  /** Persists a settings change and returns the complete resulting settings. */
+  async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+    return this.repositories.settings.update(patch);
   }
 
   /** Builds the full player read model. Returns null before onboarding. */

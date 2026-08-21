@@ -41,7 +41,12 @@ describe('seeded program', () => {
     ]);
 
     const bss = plan!.entries[0]!;
-    expect(bss.prescription).toMatchObject({ sets: 3, targetMin: 8, targetMax: 12, restSeconds: 120 });
+    expect(bss.prescription).toMatchObject({
+      sets: 3,
+      targetMin: 8,
+      targetMax: 12,
+      restSeconds: 120,
+    });
     expect(bss.variation.measurementKind).toBe('reps-per-side');
 
     const plank = plan!.entries[6]!;
@@ -124,7 +129,10 @@ describe('workout persistence', () => {
 
   it('stores left and right values independently', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     const unilateral = session.performances.find((p) => p.measurementKind === 'reps-per-side')!;
 
     await harness.workouts.recordSet(unilateral.id, 1, 9, 7);
@@ -137,7 +145,10 @@ describe('workout persistence', () => {
 
   it('stores a timed hold with no second side', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     const timed = session.performances.find((p) => p.measurementKind === 'time')!;
 
     await harness.workouts.recordSet(timed.id, 1, 42, null);
@@ -150,7 +161,10 @@ describe('workout persistence', () => {
 
   it('overwrites rather than duplicates when a set is re-logged', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     const first = session.performances[0]!;
 
     await harness.workouts.recordSet(first.id, 1, 8, 8);
@@ -210,11 +224,7 @@ describe('A/B alternation across real sessions', () => {
     for (let index = 0; index < 4; index += 1) {
       const plan = await harness.workouts.getNextPlan();
       names.push(plan!.template.name);
-      await completeSession(
-        harness,
-        new Date(Date.UTC(2026, 7, 2 + index * 2, 10, 0, 0)),
-        () => 9,
-      );
+      await completeSession(harness, new Date(Date.UTC(2026, 7, 2 + index * 2, 10, 0, 0)), () => 9);
     }
 
     expect(names).toEqual(['Workout A', 'Workout B', 'Workout A', 'Workout B']);
@@ -228,7 +238,10 @@ describe('A/B alternation across real sessions', () => {
 
   it('does not move on when a session is abandoned', async () => {
     const plan = await harness.workouts.getNextPlan();
-    const session = await harness.workouts.startSession(plan!, new Date('2026-08-02T10:00:00.000Z'));
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
     await harness.workouts.abandonSession(session.id);
 
     expect((await harness.workouts.getNextPlan())!.template.name).toBe('Workout A');

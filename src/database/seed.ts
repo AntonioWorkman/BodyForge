@@ -1,8 +1,4 @@
-import {
-  EXERCISES,
-  EXERCISE_VARIATIONS,
-  PROGRESSION_CHAINS,
-} from '@/domain/program/catalog';
+import { EXERCISES, EXERCISE_VARIATIONS, PROGRESSION_CHAINS } from '@/domain/program/catalog';
 import { WORKOUT_TEMPLATES, WORKOUT_TEMPLATE_EXERCISES } from '@/domain/program/templates';
 import type { ProgressionState } from '@/domain/types';
 

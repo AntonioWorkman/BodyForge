@@ -60,7 +60,11 @@ describe('backup export and import', () => {
 
   it('restores a progressed template rather than resetting it', async () => {
     for (const day of [2, 4, 6]) {
-      await completeSession(harness, new Date(`2026-08-0${day}T10:00:00.000Z`), (_id, _min, max) => max);
+      await completeSession(
+        harness,
+        new Date(`2026-08-0${day}T10:00:00.000Z`),
+        (_id, _min, max) => max,
+      );
     }
     await harness.progression.confirmProgression('var-push-up-regular');
 

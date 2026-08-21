@@ -34,12 +34,12 @@ export function createTestDatabase(): SqlDatabase & { close: () => void } {
       };
     },
 
-    getFirstAsync: async <T,>(source: string, params: SqlBindValue[] = []) => {
+    getFirstAsync: async <T>(source: string, params: SqlBindValue[] = []) => {
       const row = db.prepare(source).get(...normalise(params));
       return (row as T | undefined) ?? null;
     },
 
-    getAllAsync: async <T,>(source: string, params: SqlBindValue[] = []) =>
+    getAllAsync: async <T>(source: string, params: SqlBindValue[] = []) =>
       db.prepare(source).all(...normalise(params)) as T[],
 
     withTransactionAsync: async (task) => {

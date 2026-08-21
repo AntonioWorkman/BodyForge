@@ -35,6 +35,11 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
 
 /** Non-reactive read, for callbacks and imperative code. */
 export function currentSettings(): AppSettings {
-  const { hydrated: _hydrated, hydrate: _hydrate, apply: _apply, ...settings } = useSettingsStore.getState();
+  const {
+    hydrated: _hydrated,
+    hydrate: _hydrate,
+    apply: _apply,
+    ...settings
+  } = useSettingsStore.getState();
   return settings;
 }

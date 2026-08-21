@@ -1,10 +1,4 @@
-import {
-  LEVEL_CURVE,
-  cumulativeXpForLevel,
-  didLevelUp,
-  resolveLevel,
-  xpForLevel,
-} from '../levels';
+import { LEVEL_CURVE, cumulativeXpForLevel, didLevelUp, resolveLevel, xpForLevel } from '../levels';
 
 describe('level curve', () => {
   it('starts a new player at level 1 with no progress', () => {

@@ -26,7 +26,9 @@ export interface TestHarness {
   close: () => void;
 }
 
-export async function createHarness(now = new Date('2026-08-01T09:00:00.000Z')): Promise<TestHarness> {
+export async function createHarness(
+  now = new Date('2026-08-01T09:00:00.000Z'),
+): Promise<TestHarness> {
   const db = createTestDatabase();
   await migrate(db);
   await seedCatalog(db, now.toISOString());

@@ -168,7 +168,10 @@ function computeStrength(input: AttributeInput): {
     });
   }
 
-  return { value: Math.round(total), contributions: contributions.sort((a, b) => b.points - a.points) };
+  return {
+    value: Math.round(total),
+    contributions: contributions.sort((a, b) => b.points - a.points),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +228,8 @@ function computeEndurance(input: AttributeInput): {
       const lastSet = [...sets].sort((a, b) => a.setNumber - b.setNumber)[sets.length - 1];
       if (!lastSet) continue;
       const value = effectiveSetValue(lastSet);
-      const retention = span > 0 ? clamp01((value - prescribed.targetMin) / span) : value > 0 ? 1 : 0;
+      const retention =
+        span > 0 ? clamp01((value - prescribed.targetMin) / span) : value > 0 ? 1 : 0;
       retentions.push(retention);
       exerciseCount += 1;
     }
@@ -244,7 +248,10 @@ function computeEndurance(input: AttributeInput): {
     });
   }
 
-  return { value: Math.round(total), contributions: contributions.sort((a, b) => b.points - a.points) };
+  return {
+    value: Math.round(total),
+    contributions: contributions.sort((a, b) => b.points - a.points),
+  };
 }
 
 // ---------------------------------------------------------------------------

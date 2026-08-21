@@ -1,9 +1,3 @@
-import { Screen, Text } from '@/components';
+import { HistoryScreen } from '@/features/history/HistoryScreen';
 
-export default function HistoryRoute() {
-  return (
-    <Screen tabBarInset>
-      <Text variant="displaySmall">History</Text>
-    </Screen>
-  );
-}
+export default HistoryScreen;

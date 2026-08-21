@@ -12,17 +12,37 @@ module.exports = [
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       'react-hooks/exhaustive-deps': 'warn',
       eqeqeq: ['error', 'smart'],
+      // Unused locals and parameters are caught by TypeScript itself
+      // (noUnusedLocals / noUnusedParameters), so this stays off here.
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
-      ],
     },
   },
   {
-    files: ['**/__tests__/**/*.{ts,tsx}', '**/*.test.{ts,tsx}'],
+    files: ['**/__tests__/**/*.{ts,tsx}', '**/*.test.{ts,tsx}', 'src/testing/**/*.{ts,tsx}'],
     rules: {
       'no-console': 'off',
+    },
+  },
+  {
+    // Jest config files run in Node with Jest's globals available.
+    files: ['jest.setup.js', 'jest.config.js', 'babel.config.js', 'eslint.config.js'],
+    languageOptions: {
+      globals: { global: 'writable', jest: 'readonly', require: 'readonly', module: 'writable' },
+    },
+  },
+  {
+    // Reanimated shared values are mutable handles by design: `value.value = x`
+    // is the documented way to drive an animation, on the UI thread as well as
+    // from JS. The immutability rule reads those writes as mutating state, so
+    // it is turned off where shared values are used.
+    files: [
+      'src/components/Button.tsx',
+      'src/components/Stepper.tsx',
+      'src/core/**/*.tsx',
+      'src/features/**/*.tsx',
+    ],
+    rules: {
+      'react-hooks/immutability': 'off',
     },
   },
 ];

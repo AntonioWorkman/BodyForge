@@ -52,9 +52,7 @@ export function performance(
   };
 }
 
-export function session(
-  overrides: Partial<WorkoutSessionDetail> = {},
-): WorkoutSessionDetail {
+export function session(overrides: Partial<WorkoutSessionDetail> = {}): WorkoutSessionDetail {
   return {
     id: 'session-1',
     templateId: 'template-workout-a',

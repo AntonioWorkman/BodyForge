@@ -483,8 +483,7 @@ const CHAIN_SPECS: readonly ChainSpec[] = [
       {
         id: 'var-close-grip-push-up',
         name: 'Close-Grip Push-Up',
-        execution:
-          'Hands narrower than a normal push-up — they do not need to form a diamond.',
+        execution: 'Hands narrower than a normal push-up — they do not need to form a diamond.',
         formRequirements: [
           'Elbows stay close to the ribs on the descent',
           'Chest reaches the hands',

@@ -1,9 +1,3 @@
-import { Screen, Text } from '@/components';
+import { SettingsScreen } from '@/features/settings/SettingsScreen';
 
-export default function SettingsRoute() {
-  return (
-    <Screen tabBarInset>
-      <Text variant="displaySmall">Settings</Text>
-    </Screen>
-  );
-}
+export default SettingsScreen;

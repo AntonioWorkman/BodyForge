@@ -1,4 +1,9 @@
-import { CORE_STAGES, coreStageForSessions, coreStageIndex, coreStageProgress } from '../coreStages';
+import {
+  CORE_STAGES,
+  coreStageForSessions,
+  coreStageIndex,
+  coreStageProgress,
+} from '../coreStages';
 
 describe('core stages', () => {
   it('starts dormant for a player with no training data', () => {
@@ -20,9 +25,7 @@ describe('core stages', () => {
   });
 
   it('reaches every declared stage', () => {
-    const reached = new Set(
-      Array.from({ length: 60 }, (_, i) => coreStageForSessions(i).id),
-    );
+    const reached = new Set(Array.from({ length: 60 }, (_, i) => coreStageForSessions(i).id));
     for (const stage of CORE_STAGES) {
       expect(reached.has(stage)).toBe(true);
     }

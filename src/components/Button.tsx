@@ -1,11 +1,7 @@
 import { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { colors, layout, radius, spacing } from '@/design';
 import { easing, timing } from '@/motion';
@@ -150,7 +146,12 @@ const VARIANTS = {
   },
 } as const satisfies Record<
   ButtonVariant,
-  { background: string; border: string; text: Parameters<typeof Text>[0]['color']; detail: Parameters<typeof Text>[0]['color'] }
+  {
+    background: string;
+    border: string;
+    text: Parameters<typeof Text>[0]['color'];
+    detail: Parameters<typeof Text>[0]['color'];
+  }
 >;
 
 const styles = StyleSheet.create({

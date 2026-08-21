@@ -5,7 +5,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInRight, FadeOut, FadeOutLeft } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, EmptyState, Glyph, IconButton, ProgressBar, Screen, Stepper, Text } from '@/components';
+import {
+  Button,
+  EmptyState,
+  Glyph,
+  IconButton,
+  ProgressBar,
+  Screen,
+  Stepper,
+  Text,
+} from '@/components';
 import { colors, layout, spacing } from '@/design';
 import { formatRange } from '@/domain/format';
 import type { ExercisePerformanceWithSets } from '@/domain/types';
@@ -13,10 +22,7 @@ import { timing } from '@/motion';
 import { fire as fireHaptic } from '@/motion/haptics';
 import { useReducedMotion } from '@/motion/useMotionPreference';
 import { useServices } from '@/providers/servicesContext';
-import {
-  defaultDraftFor,
-  useActiveWorkoutStore,
-} from '@/stores/activeWorkoutStore';
+import { defaultDraftFor, useActiveWorkoutStore } from '@/stores/activeWorkoutStore';
 
 import { ExerciseDetailSheet } from './ExerciseDetailSheet';
 import { ExerciseListSheet } from './ExerciseListSheet';
@@ -123,12 +129,7 @@ export function MainQuestScreen() {
   const completeSet = useCallback(async () => {
     if (!session || !performance || !draft || exerciseDone) return;
 
-    await services.workouts.recordSet(
-      performance.id,
-      currentSet,
-      draft.primary,
-      draft.secondary,
-    );
+    await services.workouts.recordSet(performance.id, currentSet, draft.primary, draft.secondary);
 
     if (currentSet >= targetSets) {
       await services.workouts.markExerciseComplete(performance.id);
@@ -271,8 +272,16 @@ export function MainQuestScreen() {
         <GestureDetector gesture={swipe}>
           <Animated.View
             key={performance.id}
-            entering={reducedMotion ? FadeIn.duration(timing.micro) : FadeInRight.duration(timing.transition)}
-            exiting={reducedMotion ? FadeOut.duration(timing.micro) : FadeOutLeft.duration(timing.transitionFast)}
+            entering={
+              reducedMotion
+                ? FadeIn.duration(timing.micro)
+                : FadeInRight.duration(timing.transition)
+            }
+            exiting={
+              reducedMotion
+                ? FadeOut.duration(timing.micro)
+                : FadeOutLeft.duration(timing.transitionFast)
+            }
             style={styles.exercise}
           >
             <View style={styles.exerciseHeader}>
@@ -323,7 +332,9 @@ export function MainQuestScreen() {
 
                 <View style={styles.steppers}>
                   <Stepper
-                    label={perSide ? 'Left' : performance.measurementKind === 'time' ? 'Hold' : 'Reps'}
+                    label={
+                      perSide ? 'Left' : performance.measurementKind === 'time' ? 'Hold' : 'Reps'
+                    }
                     value={draft.primary}
                     suffix={perSide ? undefined : suffix || undefined}
                     step={performance.measurementKind === 'time' ? 5 : 1}
@@ -370,9 +381,7 @@ export function MainQuestScreen() {
       <View style={[styles.actionBar, { paddingBottom: insets.bottom + spacing.lg }]}>
         {exerciseDone ? (
           <Button
-            label={
-              position >= session.performances.length - 1 ? 'Complete quest' : 'Next exercise'
-            }
+            label={position >= session.performances.length - 1 ? 'Complete quest' : 'Next exercise'}
             onPress={advanceAfterExercise}
             size="large"
             haptic="setComplete"
@@ -432,10 +441,7 @@ export function MainQuestScreen() {
 
 /** Recorded values per set, for the set track. */
 function completedValuesFor(performance: ExercisePerformanceWithSets): (string | null)[] {
-  const values: (string | null)[] = Array.from(
-    { length: performance.prescribed.sets },
-    () => null,
-  );
+  const values: (string | null)[] = Array.from({ length: performance.prescribed.sets }, () => null);
 
   for (const set of performance.sets) {
     const index = set.setNumber - 1;

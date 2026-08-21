@@ -16,9 +16,11 @@ describe('personal bests', () => {
 
   it('ignores sessions that were never completed', () => {
     const bests = computePersonalBests([
-      session({ status: 'abandoned', completedAt: null, performances: [
-        performance({ sets: [set(1, 50, 50)] }),
-      ] }),
+      session({
+        status: 'abandoned',
+        completedAt: null,
+        performances: [performance({ sets: [set(1, 50, 50)] })],
+      }),
     ]);
     expect(bests.size).toBe(0);
   });

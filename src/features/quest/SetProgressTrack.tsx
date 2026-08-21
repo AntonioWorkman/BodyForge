@@ -23,7 +23,11 @@ export function SetProgressTrack({
   suffix?: string;
 }) {
   return (
-    <View style={styles.row} accessibilityRole="progressbar" accessibilityLabel={`Set ${currentSet} of ${totalSets}`}>
+    <View
+      style={styles.row}
+      accessibilityRole="progressbar"
+      accessibilityLabel={`Set ${currentSet} of ${totalSets}`}
+    >
       {Array.from({ length: totalSets }, (_, index) => {
         const setNumber = index + 1;
         const value = completedValues[index] ?? null;
@@ -31,7 +35,10 @@ export function SetProgressTrack({
         const active = !done && setNumber === currentSet;
 
         return (
-          <View key={setNumber} style={[styles.cell, active && styles.cellActive, done && styles.cellDone]}>
+          <View
+            key={setNumber}
+            style={[styles.cell, active && styles.cellActive, done && styles.cellDone]}
+          >
             {done ? (
               <>
                 <Glyph name="check" size={13} color="success" strokeWidth={2} />

@@ -33,8 +33,12 @@ export function Sheet({ visible, onClose, title, subtitle, children, testID }: S
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
 
-  const entering = reducedMotion ? FadeIn.duration(timing.micro) : SlideInDown.duration(timing.interaction);
-  const exiting = reducedMotion ? FadeOut.duration(timing.micro) : SlideOutDown.duration(timing.interactionFast);
+  const entering = reducedMotion
+    ? FadeIn.duration(timing.micro)
+    : SlideInDown.duration(timing.interaction);
+  const exiting = reducedMotion
+    ? FadeOut.duration(timing.micro)
+    : SlideOutDown.duration(timing.interactionFast);
 
   return (
     <Modal
@@ -45,7 +49,11 @@ export function Sheet({ visible, onClose, title, subtitle, children, testID }: S
       statusBarTranslucent
     >
       <View style={styles.root} testID={testID}>
-        <Animated.View entering={FadeIn.duration(timing.interactionFast)} exiting={FadeOut} style={styles.scrimLayer}>
+        <Animated.View
+          entering={FadeIn.duration(timing.interactionFast)}
+          exiting={FadeOut}
+          style={styles.scrimLayer}
+        >
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Dismiss"
@@ -112,7 +120,10 @@ export function SheetRow({
       ]}
     >
       <View style={styles.rowText}>
-        <Text variant="bodyStrong" color={disabled ? 'textDisabled' : active ? 'highlight' : 'text'}>
+        <Text
+          variant="bodyStrong"
+          color={disabled ? 'textDisabled' : active ? 'highlight' : 'text'}
+        >
           {title}
         </Text>
         {detail ? (

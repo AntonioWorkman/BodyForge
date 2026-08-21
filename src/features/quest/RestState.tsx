@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -42,38 +42,39 @@ export function RestState({ nextExerciseName, nextSetLabel, onSkip, onComplete }
   const reducedMotion = useReducedMotion();
 
   const [remaining, setRemaining] = useState(() => Math.ceil(restSecondsRemaining(rest)));
-  const [warned, setWarned] = useState(false);
   const paused = rest?.pausedAt !== null && rest?.pausedAt !== undefined;
+
+  // Haptics fire from the tick rather than from a render effect, so each one
+  // happens exactly once as the timer crosses its threshold.
+  const warned = useRef(false);
+  const finished = useRef(false);
 
   // A display tick only: the value is always recomputed from the stored anchor,
   // so a dropped or delayed tick cannot make the timer drift. State is written
   // only when the displayed second actually changes, which keeps this to one
   // re-render per second rather than five.
   useEffect(() => {
-    const tick = () =>
-      setRemaining((current) => {
-        const next = Math.ceil(restSecondsRemaining(rest));
-        return next === current ? current : next;
-      });
+    const tick = () => {
+      const next = Math.ceil(restSecondsRemaining(rest));
 
-    tick();
+      if (!warned.current && next > 0 && next <= FINAL_STRETCH_SECONDS) {
+        warned.current = true;
+        fireHaptic('restEnding');
+      }
+
+      if (!finished.current && next <= 0 && rest) {
+        finished.current = true;
+        fireHaptic('restComplete');
+        onComplete();
+        return;
+      }
+
+      setRemaining((current) => (next === current ? current : next));
+    };
+
     const id = setInterval(tick, 200);
     return () => clearInterval(id);
-  }, [rest]);
-
-  useEffect(() => {
-    if (!warned && remaining > 0 && remaining <= FINAL_STRETCH_SECONDS) {
-      setWarned(true);
-      fireHaptic('restEnding');
-    }
-  }, [remaining, warned]);
-
-  useEffect(() => {
-    if (remaining <= 0 && rest) {
-      fireHaptic('restComplete');
-      onComplete();
-    }
-  }, [onComplete, remaining, rest]);
+  }, [onComplete, rest]);
 
   const total = rest?.durationSeconds ?? 1;
   const progress = Math.min(1, Math.max(0, 1 - remaining / total));

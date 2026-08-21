@@ -18,9 +18,7 @@ describe('XP rules', () => {
   it('pays for prescribed sets, the exercise, and the session', () => {
     const result = calculateSessionXp({
       ...base,
-      performances: [
-        performance({ sets: [set(1, 10, 10), set(2, 9, 9), set(3, 8, 8)] }),
-      ],
+      performances: [performance({ sets: [set(1, 10, 10), set(2, 9, 9), set(3, 8, 8)] })],
     });
 
     expect(result.countedSets).toBe(3);
@@ -34,9 +32,7 @@ describe('XP rules', () => {
     const prescribed = prescription({ sets: 3 });
     const three = calculateSessionXp({
       ...base,
-      performances: [
-        performance({ prescribed, sets: [set(1, 10), set(2, 10), set(3, 10)] }),
-      ],
+      performances: [performance({ prescribed, sets: [set(1, 10), set(2, 10), set(3, 10)] })],
     });
     const six = calculateSessionXp({
       ...base,
@@ -95,9 +91,7 @@ describe('XP rules', () => {
 
   it('pays a bonus per confirmed progression', () => {
     const result = calculateSessionXp({ ...base, performances: [], progressionsUnlocked: 2 });
-    expect(result.total).toBe(
-      XP_RULES.workoutCompletionBonus + 2 * XP_RULES.progressionBonus,
-    );
+    expect(result.total).toBe(XP_RULES.workoutCompletionBonus + 2 * XP_RULES.progressionBonus);
   });
 
   it('projects a clean Workout A at its full base value', () => {

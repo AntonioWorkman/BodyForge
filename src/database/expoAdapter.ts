@@ -13,9 +13,9 @@ export function fromExpoDatabase(db: SQLiteDatabase): SqlDatabase {
       const result = await db.runAsync(source, params);
       return { lastInsertRowId: result.lastInsertRowId, changes: result.changes };
     },
-    getFirstAsync: <T,>(source: string, params: SqlBindValue[] = []) =>
+    getFirstAsync: <T>(source: string, params: SqlBindValue[] = []) =>
       db.getFirstAsync<T>(source, params),
-    getAllAsync: <T,>(source: string, params: SqlBindValue[] = []) =>
+    getAllAsync: <T>(source: string, params: SqlBindValue[] = []) =>
       db.getAllAsync<T>(source, params),
     withTransactionAsync: (task) => db.withTransactionAsync(task),
   };

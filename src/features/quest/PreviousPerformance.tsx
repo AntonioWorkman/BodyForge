@@ -46,10 +46,22 @@ export function PreviousPerformance({
       {perSide ? (
         <View style={styles.headerRow}>
           <View style={styles.setColumn} />
-          <Text variant="overline" color="textMuted" uppercase align="center" style={styles.valueColumn}>
+          <Text
+            variant="overline"
+            color="textMuted"
+            uppercase
+            align="center"
+            style={styles.valueColumn}
+          >
             Left
           </Text>
-          <Text variant="overline" color="textMuted" uppercase align="center" style={styles.valueColumn}>
+          <Text
+            variant="overline"
+            color="textMuted"
+            uppercase
+            align="center"
+            style={styles.valueColumn}
+          >
             Right
           </Text>
         </View>
@@ -60,7 +72,13 @@ export function PreviousPerformance({
           <Text variant="caption" color="textMuted" tabular style={styles.setColumn}>
             {set.setNumber}
           </Text>
-          <Text variant="captionStrong" color="textSecondary" tabular align="center" style={styles.valueColumn}>
+          <Text
+            variant="captionStrong"
+            color="textSecondary"
+            tabular
+            align="center"
+            style={styles.valueColumn}
+          >
             {set.primaryValue}
             {suffix}
           </Text>

@@ -12,12 +12,7 @@ import {
   vec,
 } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import {
-  useDerivedValue,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
+import { useDerivedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 
 import { palette } from '@/design';

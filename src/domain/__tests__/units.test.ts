@@ -34,9 +34,9 @@ describe('formatting', () => {
     expect(formatPrescription(prescription({ targetMin: 7, targetMax: 10 }), 'reps')).toBe(
       '3 × 7–10',
     );
-    expect(
-      formatPrescription(prescription({ targetMin: 30, targetMax: 45 }), 'time'),
-    ).toBe('3 × 30–45s');
+    expect(formatPrescription(prescription({ targetMin: 30, targetMax: 45 }), 'time')).toBe(
+      '3 × 30–45s',
+    );
   });
 
   it('collapses a single-value range', () => {

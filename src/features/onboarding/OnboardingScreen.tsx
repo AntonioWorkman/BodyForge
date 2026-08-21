@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
@@ -208,11 +207,7 @@ function Choice({
       }}
       style={[styles.choice, selected && styles.choiceSelected]}
     >
-      <Text
-        variant="bodyStrong"
-        color={selected ? 'highlight' : 'textSecondary'}
-        align="center"
-      >
+      <Text variant="bodyStrong" color={selected ? 'highlight' : 'textSecondary'} align="center">
         {label}
       </Text>
     </Pressable>

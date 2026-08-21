@@ -26,10 +26,7 @@ interface SurfaceProps {
  */
 export function Surface({ children, tone = 'line', padded = true, style, testID }: SurfaceProps) {
   return (
-    <View
-      testID={testID}
-      style={[styles.base, TONES[tone], padded && styles.padded, style]}
-    >
+    <View testID={testID} style={[styles.base, TONES[tone], padded && styles.padded, style]}>
       {children}
     </View>
   );

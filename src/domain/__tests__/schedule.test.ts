@@ -67,9 +67,7 @@ describe('recovery guidance', () => {
   });
 
   it('lapses once the window has passed', () => {
-    const after = new Date(
-      new Date(completed).getTime() + (RECOVERY_WINDOW_HOURS + 1) * 3_600_000,
-    );
+    const after = new Date(new Date(completed).getTime() + (RECOVERY_WINDOW_HOURS + 1) * 3_600_000);
     expect(isInRecoveryWindow(completed, after)).toBe(false);
   });
 

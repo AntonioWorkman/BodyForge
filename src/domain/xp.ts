@@ -54,10 +54,7 @@ export interface XpAwardInput {
 }
 
 /** Sets that count toward XP: completed, but never more than prescribed. */
-export function countedSetsFor(
-  prescribed: Prescription,
-  completedSetCount: number,
-): number {
+export function countedSetsFor(prescribed: Prescription, completedSetCount: number): number {
   return Math.max(0, Math.min(prescribed.sets, completedSetCount));
 }
 
@@ -108,10 +105,7 @@ export function calculateSessionXp(input: XpAwardInput): XpBreakdown {
     });
   }
 
-  const countedBests = Math.min(
-    input.personalBests.length,
-    XP_RULES.maxPersonalBestsPerSession,
-  );
+  const countedBests = Math.min(input.personalBests.length, XP_RULES.maxPersonalBestsPerSession);
   if (countedBests > 0) {
     lineItems.push({
       id: 'personal-bests',

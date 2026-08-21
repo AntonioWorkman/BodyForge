@@ -1,9 +1,3 @@
-import { Screen, Text } from '@/components';
+import { StatusScreen } from '@/features/status/StatusScreen';
 
-export default function StatusRoute() {
-  return (
-    <Screen tabBarInset>
-      <Text variant="displaySmall">Status</Text>
-    </Screen>
-  );
-}
+export default StatusScreen;

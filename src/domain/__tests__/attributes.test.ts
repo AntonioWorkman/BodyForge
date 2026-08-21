@@ -44,9 +44,7 @@ describe('attributes', () => {
     const attributes = build([
       session({
         completedAt: '2026-08-20T10:00:00.000Z',
-        performances: [
-          performance({ sets: [set(1, 12, 12), set(2, 12, 12), set(3, 12, 12)] }),
-        ],
+        performances: [performance({ sets: [set(1, 12, 12), set(2, 12, 12), set(3, 12, 12)] })],
       }),
     ]);
 
@@ -56,23 +54,15 @@ describe('attributes', () => {
   });
 
   it('scores a stronger performance higher than a weaker one', () => {
-    const weak = build([
-      session({ performances: [performance({ sets: [set(1, 8, 8)] })] }),
-    ]);
-    const strong = build([
-      session({ performances: [performance({ sets: [set(1, 12, 12)] })] }),
-    ]);
+    const weak = build([session({ performances: [performance({ sets: [set(1, 8, 8)] })] })]);
+    const strong = build([session({ performances: [performance({ sets: [set(1, 12, 12)] })] })]);
 
     expect(value(strong, 'strength').value).toBeGreaterThan(value(weak, 'strength').value);
   });
 
   it('does not reward reps beyond the prescribed top of range', () => {
-    const atTarget = build([
-      session({ performances: [performance({ sets: [set(1, 12, 12)] })] }),
-    ]);
-    const absurd = build([
-      session({ performances: [performance({ sets: [set(1, 200, 200)] })] }),
-    ]);
+    const atTarget = build([session({ performances: [performance({ sets: [set(1, 12, 12)] })] })]);
+    const absurd = build([session({ performances: [performance({ sets: [set(1, 200, 200)] })] })]);
 
     expect(value(absurd, 'strength').value).toBe(value(atTarget, 'strength').value);
   });

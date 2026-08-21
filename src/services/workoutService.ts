@@ -1,5 +1,4 @@
-import type { RepositoryBundle } from '@/database/repositories/interfaces';
-import type { ActiveSessionUiState } from '@/database/repositories/interfaces';
+import type { ActiveSessionUiState, RepositoryBundle } from '@/database/repositories/interfaces';
 import { countQualifyingSessions, isQualifyingPerformance } from '@/domain/mastery';
 import { countImprovements, findNewPersonalBests } from '@/domain/personalBests';
 import { phaseForSessionCount } from '@/domain/phases';
@@ -103,6 +102,11 @@ export class WorkoutService {
 
   async getActiveSession(): Promise<WorkoutSessionDetail | null> {
     return this.repositories.sessions.findActive();
+  }
+
+  /** Every completed session with its performances, oldest first. */
+  async listCompletedSessions(): Promise<WorkoutSessionDetail[]> {
+    return this.repositories.sessions.listCompleted();
   }
 
   /**

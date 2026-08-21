@@ -3,10 +3,7 @@ import type { MeasurementKind, Prescription } from './types';
 /** Formatting helpers shared by every screen so wording never diverges. */
 
 /** `3 × 8–12 / leg`, `3 × 30–45s`, `3 × 7–10`. */
-export function formatPrescription(
-  prescription: Prescription,
-  kind: MeasurementKind,
-): string {
+export function formatPrescription(prescription: Prescription, kind: MeasurementKind): string {
   return `${prescription.sets} × ${formatRange(prescription, kind)}`;
 }
 

@@ -1,11 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  useAnimatedStyle,
-  useDerivedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 // Expo Router ships its own bottom-tabs implementation; its prop types are the
 // ones the navigator actually passes, so they are imported from there.
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';

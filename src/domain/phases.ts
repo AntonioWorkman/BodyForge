@@ -66,11 +66,16 @@ export function resolvePhaseState(completedSessions: number): PhaseState {
   const sessionsInPhase = nextPhase ? nextPhase.sessionsRequired - phase.sessionsRequired : null;
 
   const progress =
-    sessionsInPhase && sessionsInPhase > 0
-      ? Math.min(1, sessionsIntoPhase / sessionsInPhase)
-      : 1;
+    sessionsInPhase && sessionsInPhase > 0 ? Math.min(1, sessionsIntoPhase / sessionsInPhase) : 1;
 
-  return { phase, completedSessions: sessions, sessionsIntoPhase, sessionsInPhase, progress, nextPhase };
+  return {
+    phase,
+    completedSessions: sessions,
+    sessionsIntoPhase,
+    sessionsInPhase,
+    progress,
+    nextPhase,
+  };
 }
 
 /** True when completing one more session moves the player into a new phase. */

@@ -103,6 +103,10 @@ export function useQuestSession(templateId: string | undefined): QuestSessionSta
   );
 
   useEffect(() => {
+    // Loading from SQLite on mount is exactly the external-system
+    // synchronisation effects exist for; the state writes happen after the
+    // awaited read, not synchronously in the effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(true);
   }, [load]);
 
