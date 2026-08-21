@@ -1,8 +1,10 @@
 import { APP_CONFIG } from '@/config/app.config';
 import type { RepositoryBundle } from '@/database/repositories/interfaces';
 import type { SqlDatabase } from '@/database/sqlDatabase';
+import type { UnitOfWork } from '@/database/unitOfWork';
 import { encodeStringArray } from '@/database/repositories/rows';
 import { seedCatalog, seedProgressionStates } from '@/database/seed';
+import { recomputeMasteryWith } from './progressionService';
 
 import type { Backup, BackupValidationResult } from './backupSchema';
 import { validateBackup } from './backupSchema';
@@ -22,6 +24,7 @@ export class BackupService {
   constructor(
     private readonly repositories: RepositoryBundle,
     private readonly db: SqlDatabase,
+    private readonly unitOfWork: UnitOfWork,
   ) {}
 
   /** Builds the backup document. */
@@ -88,6 +91,10 @@ export class BackupService {
     // before the restore so foreign keys have targets, and it cannot happen
     // inside it: `seedCatalog` opens its own transaction, and Expo SQLite
     // issues a bare BEGIN that fails when nested.
+    // Step 1, outside the restore: refresh reference data. The catalog is not
+    // player data — it ships with the app, re-seeds idempotently, and must be
+    // present before player rows can reference it. Failing here changes
+    // nothing the player owns.
     await seedCatalog(this.db, now.toISOString());
 
     const knownVariations = await this.db.getAllAsync<{ id: string }>(
@@ -95,17 +102,25 @@ export class BackupService {
     );
     const known = new Set(knownVariations.map((row) => row.id));
 
-    await this.db.withTransactionAsync(async () => {
-      await this.clearPlayerTables();
+    // Step 2: the destructive replacement, as one transaction. Everything a
+    // successful restore requires happens inside it — including progression
+    // reconstruction, which used to run after the commit. A failure there left
+    // the old data already deleted while the UI reported "Import failed".
+    await this.unitOfWork.run(async (repos, db) => {
+      await this.clearPlayerTables(db);
 
-      await this.db.runAsync(
+      await db.runAsync(
         `INSERT INTO player_profile
            (id, name, avatar_uri, created_at, total_xp, next_template_rotation_order)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
           'player',
           backup.profile.name,
-          backup.profile.avatarUri,
+          // Always null, whatever the document holds. The format carries no
+          // image data, so any path in it belongs to another installation —
+          // restoring it would present a broken reference as a surviving
+          // avatar. Older or hand-written v1 files can still contain one.
+          null,
           backup.profile.createdAt,
           backup.profile.totalXp,
           backup.profile.nextTemplateRotationOrder,
@@ -113,14 +128,14 @@ export class BackupService {
       );
 
       for (const [key, value] of Object.entries(backup.settings)) {
-        await this.db.runAsync('INSERT INTO app_settings (key, value) VALUES (?, ?)', [
+        await db.runAsync('INSERT INTO app_settings (key, value) VALUES (?, ?)', [
           key,
           String(value),
         ]);
       }
 
       for (const session of backup.sessions) {
-        await this.db.runAsync(
+        await db.runAsync(
           `INSERT INTO workout_session
              (id, template_id, template_name, template_focus, phase_id, status,
               started_at, completed_at, duration_seconds, xp_awarded, session_number)
@@ -141,7 +156,7 @@ export class BackupService {
         );
 
         for (const performance of session.performances) {
-          await this.db.runAsync(
+          await db.runAsync(
             `INSERT INTO exercise_performance
                (id, session_id, position, variation_id, exercise_name, variation_name,
                 measurement_kind, sets, target_min, target_max, rest_seconds, tempo, cues, completed_at)
@@ -165,7 +180,7 @@ export class BackupService {
           );
 
           for (const set of performance.sets) {
-            await this.db.runAsync(
+            await db.runAsync(
               `INSERT INTO set_performance
                  (id, performance_id, set_number, primary_value, secondary_value, completed_at)
                VALUES (?, ?, ?, ?, ?, ?)`,
@@ -183,7 +198,7 @@ export class BackupService {
       }
 
       for (const measurement of backup.measurements) {
-        await this.db.runAsync(
+        await db.runAsync(
           `INSERT INTO measurement (id, type, value, recorded_on, created_at, note)
            VALUES (?, ?, ?, ?, ?, ?)`,
           [
@@ -197,11 +212,11 @@ export class BackupService {
         );
       }
 
-      await this.db.runAsync('DELETE FROM progression_state', []);
+      await db.runAsync('DELETE FROM progression_state', []);
 
       for (const state of backup.progression) {
         if (!known.has(state.variationId)) continue;
-        await this.db.runAsync(
+        await db.runAsync(
           `INSERT INTO progression_state
              (variation_id, status, qualifying_sessions, started_at, mastered_at, unlocked_at)
            VALUES (?, ?, ?, ?, ?, ?)`,
@@ -221,16 +236,20 @@ export class BackupService {
         // the foreign key and abort the whole restore. The template keeps the
         // freshly seeded default instead.
         if (!known.has(entry.variationId)) continue;
-        await this.db.runAsync(
-          'UPDATE workout_template_exercise SET variation_id = ? WHERE id = ?',
-          [entry.variationId, entry.id],
-        );
+        await db.runAsync('UPDATE workout_template_exercise SET variation_id = ? WHERE id = ?', [
+          entry.variationId,
+          entry.id,
+        ]);
       }
-    });
+      // A backup can predate variations this build knows about; those get
+      // their starting state now that the restored rows are in place.
+      await seedProgressionStates(db, now.toISOString());
 
-    // A backup can predate variations this build knows about; those get their
-    // starting state now that the restored rows are in place.
-    await seedProgressionStates(this.db, now.toISOString());
+      // Qualifying counts are recomputed from the sessions actually restored
+      // rather than trusted from the document, and inside this transaction so
+      // a restore never commits with derived state left stale.
+      await recomputeMasteryWith(repos);
+    });
 
     return { sessions: backup.sessions.length, measurements: backup.measurements.length };
   }
@@ -240,14 +259,16 @@ export class BackupService {
    * state. Reference data is re-seeded so the app remains usable afterwards.
    */
   async clearAll(now = new Date()): Promise<void> {
-    await this.db.withTransactionAsync(async () => {
-      await this.clearPlayerTables();
-      await this.db.runAsync('DELETE FROM progression_state', []);
+    await this.unitOfWork.run(async (_repos, db) => {
+      await this.clearPlayerTables(db);
+      await db.runAsync('DELETE FROM progression_state', []);
     });
+    // Reference data is restored afterwards so the app is usable again. It is
+    // idempotent and owns no player state, so it is safe outside the boundary.
     await seedCatalog(this.db, now.toISOString());
   }
 
-  private async clearPlayerTables(): Promise<void> {
+  private async clearPlayerTables(db: SqlDatabase): Promise<void> {
     for (const table of [
       'set_performance',
       'exercise_performance',
@@ -257,7 +278,7 @@ export class BackupService {
       'app_settings',
       'player_profile',
     ]) {
-      await this.db.runAsync(`DELETE FROM ${table}`, []);
+      await db.runAsync(`DELETE FROM ${table}`, []);
     }
   }
 }

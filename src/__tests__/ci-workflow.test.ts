@@ -31,7 +31,7 @@ describe('CI workflow', () => {
   });
 
   it('invokes every verification script the project defines', () => {
-    for (const script of ['typecheck', 'lint']) {
+    for (const script of ['typecheck', 'lint', 'format:check']) {
       expect(packageJson.scripts[script]).toBeDefined();
       expect(workflow).toContain(`npm run ${script}`);
     }

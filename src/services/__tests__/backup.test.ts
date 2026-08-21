@@ -299,6 +299,31 @@ describe('backup export and import', () => {
       expect((await harness.repositories.player.get())?.avatarUri).toBeNull();
     });
 
+    it('discards an avatar path supplied in the document', async () => {
+      await seedRealData();
+      const document = JSON.parse(await harness.backup.exportToJson());
+
+      // An older or hand-written v1 file can carry a path from another device.
+      document.profile.avatarUri = 'file:///old-device/private/path/avatar.jpg';
+      expect(validateBackup(JSON.stringify(document)).ok).toBe(true);
+
+      await harness.backup.clearAll();
+      await harness.backup.import(JSON.stringify(document));
+
+      expect((await harness.repositories.player.get())?.avatarUri).toBeNull();
+    });
+
+    it('does not touch files referenced by an imported document', async () => {
+      await seedRealData();
+      const document = JSON.parse(await harness.backup.exportToJson());
+      document.profile.avatarUri = 'file:///somebody-elses/photo.jpg';
+
+      await harness.backup.import(JSON.stringify(document));
+
+      // Nothing outside app-owned storage is ever deleted.
+      expect(harness.avatars.removed).toEqual([]);
+    });
+
     it('leaves everything else about the profile intact', async () => {
       await seedRealData();
       await harness.player.updateAvatar('file:///picker/tmp/photo.jpg');

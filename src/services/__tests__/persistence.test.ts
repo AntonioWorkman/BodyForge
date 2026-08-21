@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 import { createRepositories } from '@/database/repositories/sqlite';
+import { SessionNotActiveError } from '@/domain/errors';
 import { seedCatalog } from '@/database/seed';
 import { resolveLevel } from '@/domain/levels';
 import { WORKOUT_TEMPLATE_EXERCISES } from '@/domain/program/templates';
@@ -234,6 +235,28 @@ describe('workout persistence', () => {
     expect(grouped.size).toBe(0);
   });
 
+  it('returns the most recent sessions when a limit is given, not the oldest', async () => {
+    for (let index = 0; index < 4; index += 1) {
+      await completeSession(harness, new Date(Date.UTC(2026, 7, 2 + index * 2, 10)), () => 9);
+    }
+
+    const all = await harness.repositories.sessions.listCompletedSummaries();
+    expect(all).toHaveLength(4);
+
+    const limited = await harness.repositories.sessions.listCompletedSummaries(2);
+    expect(limited).toHaveLength(2);
+
+    // Still chronological, but the newest two — a limit applied to an ascending
+    // scan would have returned sessions 1 and 2 instead.
+    expect(limited.map((s) => s.sessionNumber)).toEqual([3, 4]);
+    expect(limited[1]?.completedAt).toBe(all[3]?.completedAt);
+  });
+
+  it('treats a zero or negative limit as returning nothing', async () => {
+    await completeSession(harness, new Date('2026-08-02T10:00:00.000Z'), () => 9);
+    expect(await harness.repositories.sessions.listCompletedSummaries(0)).toEqual([]);
+  });
+
   it('awards XP once and keeps the level derived from the same total', async () => {
     const summary = await completeSession(harness, new Date('2026-08-02T10:00:00.000Z'), () => 9);
     expect(summary.xp.total).toBe(345);
@@ -245,9 +268,14 @@ describe('workout persistence', () => {
 
   it('refuses to complete the same session twice', async () => {
     const summary = await completeSession(harness, new Date('2026-08-02T10:00:00.000Z'), () => 9);
-    await expect(harness.workouts.completeSession(summary.session.id)).rejects.toThrow(
-      /already been completed/,
+
+    await expect(harness.workouts.completeSession(summary.session.id)).rejects.toBeInstanceOf(
+      SessionNotActiveError,
     );
+
+    // And the second attempt changed nothing.
+    expect(await harness.repositories.sessions.countCompleted()).toBe(1);
+    expect((await harness.repositories.player.get())?.totalXp).toBe(summary.xp.total);
   });
 });
 

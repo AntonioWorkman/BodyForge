@@ -70,6 +70,9 @@ export function MainQuestScreen() {
   // carry its own rest duration.
   const defaultRestSeconds = useSettingsStore((store) => store.defaultRestSeconds);
 
+  // Guards the in-flight set write: a double tap would otherwise re-enter,
+  // re-record the same set number and start a second rest period.
+  const [recordingSet, setRecordingSet] = useState(false);
   const [listVisible, setListVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
   const [executionNotes, setExecutionNotes] = useState<Record<string, string>>({});
@@ -139,30 +142,36 @@ export function MainQuestScreen() {
   );
 
   const completeSet = useCallback(async () => {
-    if (!session || !performance || !draft || exerciseDone) return;
+    if (!session || !performance || !draft || exerciseDone || recordingSet) return;
 
-    await services.workouts.recordSet(performance.id, currentSet, draft.primary, draft.secondary);
+    setRecordingSet(true);
+    try {
+      await services.workouts.recordSet(performance.id, currentSet, draft.primary, draft.secondary);
 
-    if (currentSet >= targetSets) {
-      await services.workouts.markExerciseComplete(performance.id);
-      fireHaptic('exerciseComplete');
+      if (currentSet >= targetSets) {
+        await services.workouts.markExerciseComplete(performance.id);
+        fireHaptic('exerciseComplete');
+        await reload();
+        setPhase('exercise-complete');
+        return;
+      }
+
+      fireHaptic('setComplete');
       await reload();
-      setPhase('exercise-complete');
-      return;
+
+      // Seed the next set from what was just logged.
+      setDraft(performance.id, draft);
+      startRest(performance.prescribed.restSeconds || defaultRestSeconds);
+    } finally {
+      setRecordingSet(false);
     }
-
-    fireHaptic('setComplete');
-    await reload();
-
-    // Seed the next set from what was just logged.
-    setDraft(performance.id, draft);
-    startRest(performance.prescribed.restSeconds || defaultRestSeconds);
   }, [
     currentSet,
     defaultRestSeconds,
     draft,
     exerciseDone,
     performance,
+    recordingSet,
     reload,
     services,
     session,
@@ -427,6 +436,7 @@ export function MainQuestScreen() {
             <Button
               label="Complete set"
               onPress={completeSet}
+              disabled={recordingSet}
               size="large"
               haptic={null}
               testID="complete-set"

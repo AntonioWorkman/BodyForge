@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "test": "jest",
     "test:watch": "jest --watch",
-    "verify": "npm run typecheck && npm run lint && npm run test",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm test",
     "prepare:web": "node scripts/prepare-web-assets.js",
     "postinstall": "node scripts/prepare-web-assets.js"
   },
@@ -59,7 +59,7 @@
     "@babel/core": "^7.29.7",
     "@react-native/babel-preset": "^0.87.0",
     "@testing-library/react-native": "^14.0.1",
-    "@types/jest": "^30.0.0",
+    "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~57.0.7",
     "eslint": "^9.39.5",
@@ -71,6 +71,7 @@
     "typescript": "~6.0.3"
   },
   "overrides": {
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "uuid": "^11.1.0"
   }
 }

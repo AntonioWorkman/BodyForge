@@ -220,24 +220,38 @@ export class ProgressionService {
     variationId: string,
     now = new Date(),
   ): Promise<ConfirmProgressionResult> {
-    const offer = await this.getOffer(variationId);
-    if (!offer) {
-      throw new ProgressionNotReadyError(variationId);
-    }
-
-    if (!offer.phaseEligible) {
-      const completedCount = await this.repositories.sessions.countCompleted();
-      throw new ProgressionPhaseLockedError(
-        offer.to.name,
-        offer.requiredPhase,
-        phaseForSessionCount(completedCount).id,
-      );
-    }
-
     const timestamp = now.toISOString();
 
-    const totalXpAfter = await this.unitOfWork.run(async (repos) => {
-      await repos.progression.setStatus(offer.from.id, 'mastered', timestamp);
+    // Eligibility is re-established inside the transaction. Deciding first and
+    // writing afterwards let two confirmations act on the same stale offer,
+    // paying the bonus twice and moving the chain twice.
+    return this.unitOfWork.run(async (repos) => {
+      const offer = await buildOfferFrom(repos, variationId);
+      if (!offer) {
+        throw new ProgressionNotReadyError(variationId);
+      }
+
+      if (!offer.phaseEligible) {
+        const completedCount = await repos.sessions.countCompleted();
+        throw new ProgressionPhaseLockedError(
+          offer.to.name,
+          offer.requiredPhase,
+          phaseForSessionCount(completedCount).id,
+        );
+      }
+
+      // The transition is the guard: the source must still be `current`. A
+      // second confirmation finds it `mastered` and changes nothing.
+      const claimed = await repos.progression.compareAndSetStatus(
+        offer.from.id,
+        'current',
+        'mastered',
+        timestamp,
+      );
+      if (!claimed) {
+        throw new ProgressionNotReadyError(variationId);
+      }
+
       await repos.progression.upsert({
         variationId: offer.to.id,
         status: 'current',
@@ -253,15 +267,15 @@ export class ProgressionService {
         await repos.catalog.replaceTemplateExerciseVariation(entry.id, offer.to.id);
       }
 
-      return repos.player.addXp(XP_RULES.progressionBonus);
-    });
+      const totalXpAfter = await repos.player.addXp(XP_RULES.progressionBonus);
 
-    return {
-      from: offer.from,
-      to: offer.to,
-      xpAwarded: XP_RULES.progressionBonus,
-      totalXpAfter,
-    };
+      return {
+        from: offer.from,
+        to: offer.to,
+        xpAwarded: XP_RULES.progressionBonus,
+        totalXpAfter,
+      };
+    });
   }
 
   /**
@@ -269,16 +283,7 @@ export class ProgressionService {
    * history. Used after an import, where stored counts cannot be trusted.
    */
   async recomputeAllMastery(): Promise<void> {
-    const states = await this.repositories.progression.list();
-    for (const state of states) {
-      const history = await this.repositories.sessions.listPerformancesForVariation(
-        state.variationId,
-      );
-      await this.repositories.progression.setQualifyingSessions(
-        state.variationId,
-        countQualifyingSessions(history),
-      );
-    }
+    await this.unitOfWork.run((repos) => recomputeMasteryWith(repos));
   }
 }
 
@@ -295,4 +300,60 @@ function fallbackState(variationId: string): ProgressionState {
 
 function phaseOrder(phase: PhaseId): number {
   return phase === 'awakening' ? 0 : phase === 'development' ? 1 : 2;
+}
+
+/**
+ * Builds the offer for a variation from whichever repository bundle is given.
+ *
+ * Shared by `getOffer` and by `confirmProgression`, which re-derives it inside
+ * the transaction so the decision and the mutation see the same state — every
+ * precondition (still current, still qualified, same successor, phase reached)
+ * is re-established rather than carried in from an earlier read.
+ */
+async function buildOfferFrom(
+  repos: RepositoryBundle,
+  variationId: string,
+): Promise<ProgressionOffer | null> {
+  const [variations, state, completedCount] = await Promise.all([
+    repos.catalog.listVariations(),
+    repos.progression.get(variationId),
+    repos.sessions.countCompleted(),
+  ]);
+  if (!state) return null;
+
+  const variation = variations.find((candidate) => candidate.id === variationId);
+  if (!variation) return null;
+
+  const chainVariations = variations
+    .filter((candidate) => candidate.chainId === variation.chainId)
+    .sort((a, b) => a.tier - b.tier);
+
+  return buildProgressionOffer(
+    variation,
+    state,
+    chainVariations,
+    phaseForSessionCount(completedCount).id,
+  );
+}
+
+/**
+ * Recomputes every variation's qualifying-session count from recorded history.
+ *
+ * Takes a repository bundle so a restore can run it inside the same
+ * transaction that replaced the history — the counts have to reflect the
+ * sessions actually restored, and a backup's stored counts are not trusted.
+ */
+export async function recomputeMasteryWith(repos: RepositoryBundle): Promise<void> {
+  const [states, historyByVariation] = await Promise.all([
+    repos.progression.list(),
+    repos.sessions.listCompletedPerformancesByVariation(),
+  ]);
+
+  for (const state of states) {
+    const history = historyByVariation.get(state.variationId) ?? [];
+    await repos.progression.setQualifyingSessions(
+      state.variationId,
+      countQualifyingSessions(history),
+    );
+  }
 }

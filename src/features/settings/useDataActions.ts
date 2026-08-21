@@ -102,8 +102,9 @@ export function useDataActions(onChanged: () => Promise<void>) {
           style: 'destructive',
           onPress: async () => {
             try {
+              // The restore is one operation: reconstructing progression is
+              // part of it, not a follow-up the UI has to remember.
               const result = await services.backup.import(raw);
-              await services.progression.recomputeAllMastery();
               await onChanged();
               fireHaptic('progressionUnlocked');
               Alert.alert(

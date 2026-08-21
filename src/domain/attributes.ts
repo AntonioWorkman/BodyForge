@@ -25,14 +25,14 @@ export const ATTRIBUTE_RULES = {
   consistencyWindowWeeks: 4,
   /** Points per second of isometric hold, before rounding. */
   endurancePointsPerHoldSecond: 0.2,
-  /** Points available for holding performance on final sets. */
+  /** Points available for holding the opening set's performance to the end. */
   enduranceRetentionPoints: 30,
   /** Points per variation the player has progressed past. */
   masteryPointsPerMastered: 10,
   /** Points per variation currently qualified and awaiting confirmation. */
   masteryPointsPerReady: 3,
-  /** Sessions considered "recent" when scoring current strength. */
-  strengthRecentSessions: 6,
+  /** Sessions considered "recent" when scoring current performance. */
+  recentSessions: 6,
 } as const;
 
 export interface AttributeInput {
@@ -53,7 +53,7 @@ const ATTRIBUTE_META: Record<AttributeId, { name: string; basis: string }> = {
   endurance: {
     name: 'Endurance',
     basis:
-      'Derived from recorded isometric holds and how well you hold performance on your final sets. Not a cardiovascular measurement.',
+      'Derived from recorded isometric holds and how well your last set holds up against your first. Not a cardiovascular measurement.',
   },
   consistency: {
     name: 'Consistency',
@@ -104,7 +104,7 @@ function computeStrength(input: AttributeInput): {
   contributions: AttributeContribution[];
 } {
   const contributions: AttributeContribution[] = [];
-  const recent = input.sessions.slice(-ATTRIBUTE_RULES.strengthRecentSessions);
+  const recent = input.sessions.slice(-ATTRIBUTE_RULES.recentSessions);
   const byVariation = performancesByVariation(recent);
 
   let total = 0;
@@ -183,7 +183,7 @@ function computeEndurance(input: AttributeInput): {
   contributions: AttributeContribution[];
 } {
   const contributions: AttributeContribution[] = [];
-  const recent = input.sessions.slice(-ATTRIBUTE_RULES.strengthRecentSessions);
+  const recent = input.sessions.slice(-ATTRIBUTE_RULES.recentSessions);
   const byVariation = performancesByVariation(recent);
 
   let total = 0;
@@ -217,20 +217,31 @@ function computeEndurance(input: AttributeInput): {
     });
   }
 
-  // Final-set retention: how much of the prescribed range survives to the end.
+  // Fatigue resistance: how much of the *opening* set survives to the last one.
+  //
+  // This deliberately does not measure where the sets fall in the prescribed
+  // range — that is absolute performance, which is what Strength already
+  // scores. Holding 8, 8, 8 is a complete hold and reads as one here, even
+  // though it sits at the bottom of the range; 12, 10, 8 is a real decline and
+  // reads as one, even though it starts at the top.
   const retentions: number[] = [];
   let exerciseCount = 0;
   for (const session of recent) {
     for (const performance of session.performances) {
-      const { prescribed, sets } = performance;
-      if (sets.length === 0) continue;
-      const span = prescribed.targetMax - prescribed.targetMin;
-      const lastSet = [...sets].sort((a, b) => a.setNumber - b.setNumber)[sets.length - 1];
-      if (!lastSet) continue;
-      const value = effectiveSetValue(lastSet);
-      const retention =
-        span > 0 ? clamp01((value - prescribed.targetMin) / span) : value > 0 ? 1 : 0;
-      retentions.push(retention);
+      const sets = [...performance.sets].sort((a, b) => a.setNumber - b.setNumber);
+      // A single set carries no fatigue signal: there is nothing to hold across.
+      if (sets.length < 2) continue;
+
+      const firstSet = sets[0];
+      const lastSet = sets[sets.length - 1];
+      if (!firstSet || !lastSet) continue;
+
+      const opening = effectiveSetValue(firstSet);
+      if (opening <= 0) continue;
+
+      // Capped at 1: finishing stronger than you started is not more endurance
+      // than holding steady, and should not out-score a clean hold.
+      retentions.push(clamp01(effectiveSetValue(lastSet) / opening));
       exerciseCount += 1;
     }
   }
@@ -240,8 +251,8 @@ function computeEndurance(input: AttributeInput): {
     const points = Math.round(mean * ATTRIBUTE_RULES.enduranceRetentionPoints * 10) / 10;
     total += points;
     contributions.push({
-      label: 'Final-set performance',
-      detail: `Held ${Math.round(mean * 100)}% of the prescribed range on final sets across ${exerciseCount} recorded ${
+      label: 'Fatigue resistance',
+      detail: `Final sets held ${Math.round(mean * 100)}% of your opening set across ${exerciseCount} recorded ${
         exerciseCount === 1 ? 'exercise' : 'exercises'
       }`,
       points,

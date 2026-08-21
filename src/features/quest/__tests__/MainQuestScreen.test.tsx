@@ -174,7 +174,10 @@ describe('Main Quest', () => {
       string,
       { text?: string; onPress?: () => void }[],
     ];
-    buttons.find((button) => button.text === 'Leave')?.onPress?.();
+    // Inside act: the handler clears the store, which re-renders the screen.
+    await act(async () => {
+      await buttons.find((button) => button.text === 'Leave')?.onPress?.();
+    });
 
     // Settle first: the offending write was asynchronous, so polling with
     // waitFor would pass on its first check before the damage landed.
@@ -200,7 +203,9 @@ describe('Main Quest', () => {
       string,
       { text?: string; onPress?: () => void | Promise<void> }[],
     ];
-    await buttons.find((button) => button.text === 'Discard quest')?.onPress?.();
+    await act(async () => {
+      await buttons.find((button) => button.text === 'Discard quest')?.onPress?.();
+    });
 
     await waitFor(async () => {
       expect(await harness.services.workouts.getActiveSession()).toBeNull();

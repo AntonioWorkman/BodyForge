@@ -29,7 +29,10 @@ function extensionOf(uri: string): string {
 }
 
 export function createAvatarStore(): AvatarStore {
-  const directory = new Directory(Paths.document, AVATAR_DIRECTORY);
+  // Resolved on first use, never at construction. Building it eagerly touches
+  // the filesystem the moment services are created — which on web throws and
+  // took the whole app down at boot, before any avatar was involved.
+  const avatarDirectory = () => new Directory(Paths.document, AVATAR_DIRECTORY);
 
   return {
     owns(uri) {
@@ -37,6 +40,7 @@ export function createAvatarStore(): AvatarStore {
     },
 
     async save(sourceUri) {
+      const directory = avatarDirectory();
       directory.create({ idempotent: true, intermediates: true });
 
       // Named by timestamp so replacing an avatar cannot collide with the file

@@ -4,6 +4,7 @@ import { computeAttributes } from '@/domain/attributes';
 import { countQualifyingSessions, deriveStatus } from '@/domain/mastery';
 import { coreStageForSessions, coreStageProgress } from '@/domain/coreStages';
 import type { CoreStage } from '@/domain/coreStages';
+import { todayIsoDate } from '@/domain/format';
 import { resolveLevel } from '@/domain/levels';
 import { resolvePhaseState } from '@/domain/phases';
 import { weeklyProgress } from '@/domain/schedule';
@@ -16,6 +17,8 @@ import type {
   ProgressionState,
   WorkoutSessionDetail,
 } from '@/domain/types';
+
+import type { UnitOfWork } from '@/database/unitOfWork';
 
 import type { AvatarStore } from './avatarStore';
 import { createId } from './ids';
@@ -58,6 +61,7 @@ export class PlayerService {
   constructor(
     private readonly repositories: RepositoryBundle,
     private readonly avatars: AvatarStore,
+    private readonly unitOfWork: UnitOfWork,
   ) {}
 
   /**
@@ -77,9 +81,27 @@ export class PlayerService {
    */
   async updateAvatar(sourceUri: string): Promise<string> {
     const profile = await this.repositories.player.get();
+    const previous = profile?.avatarUri ?? null;
+
+    // This crosses the filesystem and the database, which no transaction spans,
+    // so the ordering carries the guarantee instead:
+    //
+    //   1. copy the new file — the old one is still referenced and intact;
+    //   2. point the profile at it;
+    //   3. only then remove the old file.
+    //
+    // If step 2 fails the copy is undone, so a failure leaves the previous
+    // avatar working rather than leaking a file the app can never reach again.
     const owned = await this.avatars.save(sourceUri);
-    await this.repositories.player.update({ avatarUri: owned });
-    await this.avatars.remove(profile?.avatarUri ?? null);
+
+    try {
+      await this.repositories.player.update({ avatarUri: owned });
+    } catch (error) {
+      await this.avatars.remove(owned);
+      throw error;
+    }
+
+    await this.avatars.remove(previous);
     return owned;
   }
 
@@ -94,35 +116,43 @@ export class PlayerService {
       nextTemplateRotationOrder: 0,
     };
 
-    await this.repositories.player.create(profile);
-    await this.repositories.settings.update({
-      unitSystem: input.unitSystem,
-      onboardingCompleted: true,
+    // The player's local calendar date, not the UTC one. Truncating an ISO
+    // string records the wrong day for anyone whose offset crosses midnight,
+    // and measurement entry elsewhere already uses the local helper.
+    const isoDate = todayIsoDate(now);
+
+    // One transaction: a profile written without its settings would leave an
+    // onboarded player looking un-onboarded, and the retry would then duplicate
+    // the starting measurements.
+    await this.unitOfWork.run(async (repos) => {
+      await repos.player.create(profile);
+      await repos.settings.update({
+        unitSystem: input.unitSystem,
+        onboardingCompleted: true,
+      });
+
+      if (input.startingBodyweightKg && input.startingBodyweightKg > 0) {
+        await repos.measurements.add({
+          id: createId('meas'),
+          type: 'bodyweight',
+          value: input.startingBodyweightKg,
+          recordedOn: isoDate,
+          createdAt: now.toISOString(),
+          note: 'Starting measurement',
+        });
+      }
+
+      if (input.startingWaistCm && input.startingWaistCm > 0) {
+        await repos.measurements.add({
+          id: createId('meas'),
+          type: 'waist',
+          value: input.startingWaistCm,
+          recordedOn: isoDate,
+          createdAt: now.toISOString(),
+          note: 'Starting measurement',
+        });
+      }
     });
-
-    const isoDate = now.toISOString().slice(0, 10);
-
-    if (input.startingBodyweightKg && input.startingBodyweightKg > 0) {
-      await this.repositories.measurements.add({
-        id: createId('meas'),
-        type: 'bodyweight',
-        value: input.startingBodyweightKg,
-        recordedOn: isoDate,
-        createdAt: now.toISOString(),
-        note: 'Starting measurement',
-      });
-    }
-
-    if (input.startingWaistCm && input.startingWaistCm > 0) {
-      await this.repositories.measurements.add({
-        id: createId('meas'),
-        type: 'waist',
-        value: input.startingWaistCm,
-        recordedOn: isoDate,
-        createdAt: now.toISOString(),
-        note: 'Starting measurement',
-      });
-    }
 
     return profile;
   }

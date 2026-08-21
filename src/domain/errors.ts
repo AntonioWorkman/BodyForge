@@ -64,3 +64,18 @@ export class ProgressionNotReadyError extends Error {
     super('This variation is not ready to progress.');
   }
 }
+
+/**
+ * The session is not in a state that can be completed — already completed,
+ * abandoned, or completed by a concurrent caller between read and write.
+ */
+export class SessionNotActiveError extends Error {
+  override readonly name = 'SessionNotActiveError';
+
+  constructor(
+    readonly sessionId: string,
+    readonly status: string,
+  ) {
+    super(`This quest is no longer active (${status}).`);
+  }
+}

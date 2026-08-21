@@ -8,12 +8,6 @@
     "scheme": "bodyforge",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#08060D",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#08060D"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bodyforge.app"
@@ -43,7 +37,15 @@
           "photosPermission": "BodyForge uses your photo library only to set a local player avatar. The image never leaves your device."
         }
       ],
-      "expo-splash-screen"
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#08060D",
+          "imageWidth": 200
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

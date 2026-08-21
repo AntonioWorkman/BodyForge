@@ -87,6 +87,64 @@ describe('attributes', () => {
     expect(endurance.contributions.some((c) => c.detail.includes('135s'))).toBe(true);
   });
 
+  it('scores a steady low performer as holding, not as failing', () => {
+    // The regression this guards: Endurance used to score the final set's
+    // position in the prescribed range, which is absolute performance — the
+    // thing Strength already measures. A player doing 8, 8, 8 lost nothing and
+    // must not read as zero endurance just for training at the range bottom.
+    const steady = build([
+      session({
+        performances: [performance({ sets: [set(1, 8, 8), set(2, 8, 8), set(3, 8, 8)] })],
+      }),
+    ]);
+    const declining = build([
+      session({
+        performances: [performance({ sets: [set(1, 12, 12), set(2, 10, 10), set(3, 6, 6)] })],
+      }),
+    ]);
+
+    expect(value(steady, 'endurance').value).toBeGreaterThan(value(declining, 'endurance').value);
+  });
+
+  it('describes fatigue resistance relative to the opening set', () => {
+    const attributes = build([
+      session({
+        performances: [performance({ sets: [set(1, 10, 10), set(2, 10, 10), set(3, 5, 5)] })],
+      }),
+    ]);
+
+    const contribution = value(attributes, 'endurance').contributions.find(
+      (c) => c.label === 'Fatigue resistance',
+    );
+    expect(contribution?.detail).toContain('50% of your opening set');
+  });
+
+  it('does not reward finishing stronger than the opening set', () => {
+    const held = build([
+      session({ performances: [performance({ sets: [set(1, 10, 10), set(2, 10, 10)] })] }),
+    ]);
+    const ascending = build([
+      session({ performances: [performance({ sets: [set(1, 5, 5), set(2, 20, 20)] })] }),
+    ]);
+
+    const heldContribution = value(held, 'endurance').contributions.find(
+      (c) => c.label === 'Fatigue resistance',
+    );
+    const ascendingContribution = value(ascending, 'endurance').contributions.find(
+      (c) => c.label === 'Fatigue resistance',
+    );
+    expect(ascendingContribution?.points).toBe(heldContribution?.points);
+  });
+
+  it('ignores a single set, which carries no fatigue signal', () => {
+    const attributes = build([
+      session({ performances: [performance({ sets: [set(1, 12, 12)] })] }),
+    ]);
+    expect(
+      value(attributes, 'endurance').contributions.some((c) => c.label === 'Fatigue resistance'),
+    ).toBe(false);
+  });
+
   it('measures consistency against the target cadence, capped at full', () => {
     const dayMs = 86_400_000;
     const sessions = Array.from({ length: 12 }, (_, index) =>

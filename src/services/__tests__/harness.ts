@@ -48,11 +48,11 @@ export async function createHarness(
     repositories,
     unitOfWork,
     avatars,
-    player: new PlayerService(repositories, avatars),
+    player: new PlayerService(repositories, avatars, unitOfWork),
     workouts: new WorkoutService(repositories, unitOfWork),
     progression: new ProgressionService(repositories, unitOfWork),
     measurements: new MeasurementService(repositories),
-    backup: new BackupService(repositories, db),
+    backup: new BackupService(repositories, db, unitOfWork),
     close: () => db.close(),
   };
 }

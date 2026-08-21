@@ -96,7 +96,14 @@ export interface SessionRepository {
   recordSet(input: RecordSetInput): Promise<SetPerformance>;
   removeSet(performanceId: string, setNumber: number): Promise<void>;
   markPerformanceCompleted(performanceId: string, completedAt: string | null): Promise<void>;
-  complete(input: CompleteSessionInput): Promise<void>;
+  /**
+   * Completes a session, but only while it is still active.
+   *
+   * Returns false when no row made that transition — the session was already
+   * completed, abandoned or deleted — so a duplicate or stale caller is
+   * rejected by the database rather than by timing.
+   */
+  complete(input: CompleteSessionInput): Promise<boolean>;
   setStatus(sessionId: string, status: SessionStatus): Promise<void>;
   deleteSession(sessionId: string): Promise<void>;
   saveUiState(state: ActiveSessionUiState): Promise<void>;
@@ -116,6 +123,18 @@ export interface ProgressionRepository {
   get(variationId: string): Promise<ProgressionState | null>;
   upsert(state: ProgressionState): Promise<void>;
   setStatus(variationId: string, status: ProgressionStatus, at: string): Promise<void>;
+  /**
+   * Moves a variation to `next` only while it currently holds `expected`.
+   *
+   * Returns false if it did not, which is how a second confirmation of the same
+   * progression is rejected without relying on call ordering.
+   */
+  compareAndSetStatus(
+    variationId: string,
+    expected: ProgressionStatus,
+    next: ProgressionStatus,
+    at: string,
+  ): Promise<boolean>;
   setQualifyingSessions(variationId: string, count: number): Promise<void>;
 }
 

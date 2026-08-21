@@ -333,12 +333,26 @@ class SqliteSessionRepository implements SessionRepository {
   }
 
   async listCompletedSummaries(limit?: number): Promise<WorkoutSession[]> {
-    const sql =
-      "SELECT * FROM workout_session WHERE status = 'completed' ORDER BY completed_at ASC" +
-      (limit ? ' LIMIT ?' : '');
-    const rows = limit
-      ? await this.db.getAllAsync<SessionRow>(sql, [limit])
-      : await this.db.getAllAsync<SessionRow>(sql);
+    // A limit means "the most recent N", so the newest rows are selected first
+    // and only then ordered oldest-first for chronological processing. Applying
+    // the limit directly to an ascending scan would return the *oldest* N —
+    // the opposite of what every caller of a limit wants.
+    if (limit === undefined) {
+      const rows = await this.db.getAllAsync<SessionRow>(
+        "SELECT * FROM workout_session WHERE status = 'completed' ORDER BY completed_at ASC",
+      );
+      return rows.map(toSession);
+    }
+
+    const rows = await this.db.getAllAsync<SessionRow>(
+      `SELECT * FROM (
+         SELECT * FROM workout_session
+          WHERE status = 'completed'
+          ORDER BY completed_at DESC
+          LIMIT ?
+       ) ORDER BY completed_at ASC`,
+      [Math.max(0, Math.floor(limit))],
+    );
     return rows.map(toSession);
   }
 
@@ -460,12 +474,14 @@ class SqliteSessionRepository implements SessionRepository {
     ]);
   }
 
-  async complete(input: CompleteSessionInput): Promise<void> {
-    await this.db.runAsync(
+  async complete(input: CompleteSessionInput): Promise<boolean> {
+    // Guarded on the current status so completion is a state transition rather
+    // than an overwrite: a concurrent or repeated caller updates no rows.
+    const result = await this.db.runAsync(
       `UPDATE workout_session
           SET status = 'completed', completed_at = ?, duration_seconds = ?,
               xp_awarded = ?, session_number = ?
-        WHERE id = ?`,
+        WHERE id = ? AND status = 'active'`,
       [
         input.completedAt,
         input.durationSeconds,
@@ -474,6 +490,7 @@ class SqliteSessionRepository implements SessionRepository {
         input.sessionId,
       ],
     );
+    return result.changes === 1;
   }
 
   async setStatus(sessionId: string, status: SessionStatus): Promise<void> {
@@ -647,6 +664,24 @@ class SqliteProgressionRepository implements ProgressionRepository {
       unlockedAt: existing?.unlockedAt ?? (status === 'locked' ? null : at),
     };
     await this.upsert(next);
+  }
+
+  async compareAndSetStatus(
+    variationId: string,
+    expected: ProgressionStatus,
+    next: ProgressionStatus,
+    at: string,
+  ): Promise<boolean> {
+    // `ready` is derived rather than stored, so the caller passes the stored
+    // status it expects to find — `current` for a variation being progressed.
+    const result = await this.db.runAsync(
+      `UPDATE progression_state
+          SET status = ?,
+              mastered_at = CASE WHEN ? = 'mastered' THEN ? ELSE mastered_at END
+        WHERE variation_id = ? AND status = ?`,
+      [next, next, at, variationId, expected],
+    );
+    return result.changes === 1;
   }
 
   async setQualifyingSessions(variationId: string, count: number): Promise<void> {

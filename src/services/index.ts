@@ -24,11 +24,11 @@ export interface AppServices {
 export function createServices(handle: DatabaseHandle): AppServices {
   const { repositories, db, unitOfWork } = handle;
   return {
-    player: new PlayerService(repositories, createAvatarStore()),
+    player: new PlayerService(repositories, createAvatarStore(), unitOfWork),
     workouts: new WorkoutService(repositories, unitOfWork),
     progression: new ProgressionService(repositories, unitOfWork),
     measurements: new MeasurementService(repositories),
-    backup: new BackupService(repositories, db),
+    backup: new BackupService(repositories, db, unitOfWork),
   };
 }
 

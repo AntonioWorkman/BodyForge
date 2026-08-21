@@ -1,6 +1,6 @@
 import type { ActiveSessionUiState, RepositoryBundle } from '@/database/repositories/interfaces';
 import type { UnitOfWork } from '@/database/unitOfWork';
-import { WorkoutIncompleteError } from '@/domain/errors';
+import { SessionNotActiveError, WorkoutIncompleteError } from '@/domain/errors';
 import {
   MASTERY_RULES,
   countQualifyingSessions,
@@ -178,31 +178,36 @@ export class WorkoutService {
       completedAt: null,
     }));
 
-    await this.repositories.sessions.create({
-      session: {
-        id: sessionId,
-        templateId: plan.template.id,
-        templateName: plan.template.name,
-        templateFocus: plan.template.focus,
-        phaseId: phaseForSessionCount(completedCount).id,
-        status: 'active',
-        startedAt: now.toISOString(),
-        completedAt: null,
-        durationSeconds: null,
-        xpAwarded: null,
-        sessionNumber: null,
-      },
-      performances,
-    });
+    // One transaction: a durable session created without its UI state would
+    // start the player mid-quest with no recorded position. The resume path can
+    // recover from that, but it should not have to.
+    await this.unitOfWork.run(async (repos) => {
+      await repos.sessions.create({
+        session: {
+          id: sessionId,
+          templateId: plan.template.id,
+          templateName: plan.template.name,
+          templateFocus: plan.template.focus,
+          phaseId: phaseForSessionCount(completedCount).id,
+          status: 'active',
+          startedAt: now.toISOString(),
+          completedAt: null,
+          durationSeconds: null,
+          xpAwarded: null,
+          sessionNumber: null,
+        },
+        performances,
+      });
 
-    await this.repositories.sessions.saveUiState({
-      sessionId,
-      currentPosition: 0,
-      restStartedAt: null,
-      restDurationSeconds: null,
-      restPausedAt: null,
-      restPausedTotalMs: 0,
-      updatedAt: now.toISOString(),
+      await repos.sessions.saveUiState({
+        sessionId,
+        currentPosition: 0,
+        restStartedAt: null,
+        restDurationSeconds: null,
+        restPausedAt: null,
+        restPausedTotalMs: 0,
+        updatedAt: now.toISOString(),
+      });
     });
 
     const created = await this.repositories.sessions.findById(sessionId);
@@ -285,59 +290,69 @@ export class WorkoutService {
    * at confirmation so it cannot be earned twice.
    */
   async completeSession(sessionId: string, now = new Date()): Promise<QuestCompleteSummary> {
-    const session = await this.repositories.sessions.findById(sessionId);
-    if (!session) throw new Error(`Session ${sessionId} not found`);
-    if (session.status === 'completed') {
-      throw new Error('Session has already been completed');
-    }
+    // Everything authoritative is read inside the transaction, so preconditions
+    // and the mutation share one consistency boundary. Reading first and
+    // writing afterwards let two callers both see an active session and both
+    // commit — double XP, a rotation advanced twice, mastery refreshed twice.
+    return this.unitOfWork.run(async (repos) => {
+      const session = await repos.sessions.findById(sessionId);
+      if (!session) throw new Error(`Session ${sessionId} not found`);
+      if (session.status !== 'active') {
+        throw new SessionNotActiveError(sessionId, session.status);
+      }
 
-    const incomplete = findIncompleteExercises(session.performances);
-    if (incomplete.length > 0 || session.performances.length === 0) {
-      throw new WorkoutIncompleteError(incomplete);
-    }
+      const incomplete = findIncompleteExercises(session.performances);
+      if (incomplete.length > 0 || session.performances.length === 0) {
+        throw new WorkoutIncompleteError(incomplete);
+      }
 
-    const [profile, priorSessions, templates] = await Promise.all([
-      this.repositories.player.get(),
-      this.repositories.sessions.listCompleted(),
-      this.repositories.catalog.listTemplates(),
-    ]);
-    if (!profile) throw new Error('No player profile');
+      const [profile, priorSessions, templates] = await Promise.all([
+        repos.player.get(),
+        repos.sessions.listCompleted(),
+        repos.catalog.listTemplates(),
+      ]);
+      if (!profile) throw new Error('No player profile');
 
-    const completedAt = now.toISOString();
-    const durationSeconds = Math.max(
-      0,
-      Math.round((now.getTime() - new Date(session.startedAt).getTime()) / 1000),
-    );
+      const completedAt = now.toISOString();
+      const durationSeconds = Math.max(
+        0,
+        Math.round((now.getTime() - new Date(session.startedAt).getTime()) / 1000),
+      );
 
-    const finished: WorkoutSessionDetail = {
-      ...session,
-      status: 'completed',
-      completedAt,
-      durationSeconds,
-    };
+      const finished: WorkoutSessionDetail = {
+        ...session,
+        status: 'completed',
+        completedAt,
+        durationSeconds,
+      };
 
-    const personalBests = findNewPersonalBests(finished, priorSessions);
-    const improvements = countImprovements(finished, priorSessions);
+      const personalBests = findNewPersonalBests(finished, priorSessions);
+      const improvements = countImprovements(finished, priorSessions);
 
-    const xp = calculateSessionXp({
-      performances: session.performances,
-      sessionCompleted: true,
-      personalBests,
-      progressionsUnlocked: 0,
-    });
+      const xp = calculateSessionXp({
+        performances: session.performances,
+        sessionCompleted: true,
+        personalBests,
+        progressionsUnlocked: 0,
+      });
 
-    const sessionNumber = priorSessions.length + 1;
+      // Derived from the transactional read, not from a count taken earlier.
+      const sessionNumber = priorSessions.length + 1;
 
-    const { totalXpAfter, progressionsAvailable } = await this.unitOfWork.run(async (repos) => {
-      await repos.sessions.complete({
+      // The transition itself is the guard: if the row is no longer active,
+      // nothing downstream runs and the transaction commits no changes.
+      const transitioned = await repos.sessions.complete({
         sessionId,
         completedAt,
         durationSeconds,
         xpAwarded: xp.total,
         sessionNumber,
       });
+      if (!transitioned) {
+        throw new SessionNotActiveError(sessionId, 'completed');
+      }
 
-      const xpAfter = await repos.player.addXp(xp.total);
+      const totalXpAfter = await repos.player.addXp(xp.total);
 
       await repos.player.update({
         nextTemplateRotationOrder: advanceRotation(
@@ -346,27 +361,25 @@ export class WorkoutService {
         ),
       });
 
-      const available = await this.refreshMasteryCounts(repos, session.performances);
+      const progressionsAvailable = await this.refreshMasteryCounts(repos, session.performances);
 
-      return { totalXpAfter: xpAfter, progressionsAvailable: available };
+      return {
+        session: { ...finished, xpAwarded: xp.total, sessionNumber },
+        xp,
+        totalXpAfter,
+        levelBefore: profile.totalXp,
+        levelAfter: totalXpAfter,
+        personalBests,
+        improvements,
+        completedExercises: xp.completedExercises,
+        totalExercises: session.performances.length,
+        workingSets: xp.countedSets,
+        durationSeconds,
+        progressionsAvailable,
+        phaseAdvanced:
+          phaseForSessionCount(sessionNumber).id !== phaseForSessionCount(sessionNumber - 1).id,
+      };
     });
-
-    return {
-      session: { ...finished, xpAwarded: xp.total, sessionNumber },
-      xp,
-      totalXpAfter,
-      levelBefore: profile.totalXp,
-      levelAfter: totalXpAfter,
-      personalBests,
-      improvements,
-      completedExercises: xp.completedExercises,
-      totalExercises: session.performances.length,
-      workingSets: xp.countedSets,
-      durationSeconds,
-      progressionsAvailable,
-      phaseAdvanced:
-        phaseForSessionCount(sessionNumber).id !== phaseForSessionCount(sessionNumber - 1).id,
-    };
   }
 
   /**

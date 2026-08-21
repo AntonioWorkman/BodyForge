@@ -11,7 +11,7 @@ import { fire as fireHaptic } from '@/motion/haptics';
 import { useSystemReducedMotion } from '@/motion/useMotionPreference';
 import { useServices } from '@/providers/servicesContext';
 import { usePlayerState } from '@/providers/usePlayerState';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { currentSettings, useSettingsStore } from '@/stores/settingsStore';
 
 import { ActionRow, ToggleRow, ValueRow } from './SettingsRow';
 import { useDataActions } from './useDataActions';
@@ -54,8 +54,23 @@ export function SettingsScreen() {
 
   const update = useCallback(
     async (patch: Partial<AppSettings>) => {
+      // The store is a mirror of SQLite, applied first so motion and haptics
+      // react immediately. If the write fails it has to be put back: leaving it
+      // ahead would have the app behave according to a setting that was never
+      // saved, and silently revert on the next launch.
+      const previous = currentSettings();
+      const rollback = Object.fromEntries(
+        Object.keys(patch).map((key) => [key, previous[key as keyof AppSettings]]),
+      ) as Partial<AppSettings>;
+
       applySettings(patch);
-      await services.player.updateSettings(patch);
+      try {
+        await services.player.updateSettings(patch);
+      } catch {
+        applySettings(rollback);
+        Alert.alert('Could not save', 'That setting was not changed.');
+        return;
+      }
       await reload();
     },
     [applySettings, reload, services],

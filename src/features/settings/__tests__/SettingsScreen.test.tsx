@@ -1,10 +1,11 @@
 import { Alert } from 'react-native';
-import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { SettingsScreen } from '../SettingsScreen';
 import { renderOverServices, renderWithServices } from '@/testing/renderWithServices';
 import type { RenderedWithServices } from '@/testing/renderWithServices';
 import { Text } from '@/components';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -39,12 +40,19 @@ describe('Settings screen', () => {
     await waitFor(() => expect(screen.getByTestId('settings-screen')).toBeTruthy());
   }
 
-  /** Runs the button with the given label from the most recent Alert. */
-  function pressAlertButton(callIndex: number, label: string) {
+  /**
+   * Runs the button with the given label from the most recent Alert.
+   *
+   * Wrapped in `act` because the handler updates component state: invoking it
+   * bare schedules a render React has not been told to expect.
+   */
+  async function pressAlertButton(callIndex: number, label: string) {
     const call = alertSpy.mock.calls[callIndex] as [string, string, AlertButton[]];
     const button = call[2]?.find((candidate) => candidate.text === label);
     expect(button).toBeDefined();
-    button?.onPress?.();
+    await act(async () => {
+      await button?.onPress?.();
+    });
   }
 
   it('shows the real player, not a sample one', async () => {
@@ -60,6 +68,25 @@ describe('Settings screen', () => {
     await waitFor(async () => {
       expect((await harness.services.player.getSettings()).hapticsEnabled).toBe(false);
     });
+  });
+
+  it('puts the mirrored setting back when the write fails', async () => {
+    await open();
+    const before = useSettingsStore.getState().hapticsEnabled;
+
+    jest
+      .spyOn(harness.services.player, 'updateSettings')
+      .mockRejectedValueOnce(new Error('disk full'));
+
+    await fireEvent(screen.getByLabelText('Haptics'), 'valueChange', !before);
+
+    // The regression this guards: the store was applied optimistically and left
+    // ahead of SQLite, so the app behaved per a setting that was never saved.
+    await waitFor(() => {
+      expect(useSettingsStore.getState().hapticsEnabled).toBe(before);
+    });
+    expect((await harness.services.player.getSettings()).hapticsEnabled).toBe(before);
+    expect(alertSpy).toHaveBeenCalledWith('Could not save', expect.any(String));
   });
 
   it('changes units without rewriting stored measurements', async () => {
@@ -94,14 +121,14 @@ describe('Settings screen', () => {
     await open();
 
     await fireEvent.press(screen.getByLabelText('Clear local data'));
-    pressAlertButton(0, 'Delete everything');
+    await pressAlertButton(0, 'Delete everything');
 
     // A second confirmation, because this is the only irreversible action.
     await waitFor(() => expect(alertSpy).toHaveBeenCalledTimes(2));
     const [secondTitle] = alertSpy.mock.calls[1] as [string];
     expect(secondTitle).toBe('Are you certain?');
 
-    pressAlertButton(1, 'Keep my data');
+    await pressAlertButton(1, 'Keep my data');
     expect(await harness.services.player.getProfile()).not.toBeNull();
     expect(await harness.services.measurements.list('waist')).toHaveLength(1);
   });
@@ -111,9 +138,9 @@ describe('Settings screen', () => {
     await open();
 
     await fireEvent.press(screen.getByLabelText('Clear local data'));
-    pressAlertButton(0, 'Delete everything');
+    await pressAlertButton(0, 'Delete everything');
     await waitFor(() => expect(alertSpy).toHaveBeenCalledTimes(2));
-    pressAlertButton(1, 'Delete');
+    await pressAlertButton(1, 'Delete');
 
     await waitFor(async () => {
       expect(await harness.services.player.getProfile()).toBeNull();
