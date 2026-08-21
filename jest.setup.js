@@ -1,5 +1,8 @@
 /* eslint-env jest */
 
+// React needs this flag to allow `act` in a concurrent test renderer.
+global.IS_REACT_ACT_ENVIRONMENT = true;
+
 // Reanimated ships a Jest helper that stubs its native side.
 require('react-native-reanimated/src/jestUtils').setUpTests();
 

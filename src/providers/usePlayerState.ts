@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { PlayerState } from '@/services';
 
-import { useServices } from './ServicesProvider';
+import { useServices } from './servicesContext';
 
 /**
  * The player read model, loaded from the service layer.

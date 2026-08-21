@@ -1,9 +1,3 @@
-import { Screen, Text } from '@/components';
+import { QuestCompleteScreen } from '@/features/quest/QuestCompleteScreen';
 
-export default function QuestCompleteRoute() {
-  return (
-    <Screen>
-      <Text variant="displaySmall">Quest Complete</Text>
-    </Screen>
-  );
-}
+export default QuestCompleteScreen;

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { formatDurationLong } from '@/domain/format';
 import { RECOVERY_SUGGESTION, isInRecoveryWindow, recoveryEndsAt } from '@/domain/schedule';
 import type { WorkoutPlan, WorkoutSessionDetail } from '@/domain/types';
-import { useServices } from '@/providers/ServicesProvider';
+import { useServices } from '@/providers/servicesContext';
 import type { PlayerState } from '@/services';
 
 /**

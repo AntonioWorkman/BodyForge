@@ -3,7 +3,7 @@ import { Tabs, useRouter } from 'expo-router';
 
 import { colors } from '@/design';
 import { TabBar } from '@/features/shell/TabBar';
-import { useServices } from '@/providers/ServicesProvider';
+import { useServices } from '@/providers/servicesContext';
 
 /**
  * The five-tab shell.

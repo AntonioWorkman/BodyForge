@@ -14,7 +14,7 @@ import { Core } from '@/core';
 import { stagger, timing } from '@/motion';
 import { fire as fireHaptic } from '@/motion/haptics';
 import { useReducedMotion } from '@/motion/useMotionPreference';
-import { useServices } from '@/providers/ServicesProvider';
+import { useServices } from '@/providers/servicesContext';
 
 /**
  * First launch.

@@ -1,9 +1,3 @@
-import { Screen, Text } from '@/components';
+import { MainQuestScreen } from '@/features/quest/MainQuestScreen';
 
-export default function ActiveQuestRoute() {
-  return (
-    <Screen>
-      <Text variant="displaySmall">Main Quest</Text>
-    </Screen>
-  );
-}
+export default MainQuestScreen;

@@ -1,18 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { openDatabase } from '@/database/client';
 import { createServices } from '@/services';
-import type { AppServices } from '@/services';
 import { useSettingsStore } from '@/stores/settingsStore';
 
-interface ServicesContextValue {
-  services: AppServices;
-  /** Schema version the database reported after migrating. */
-  schemaVersion: number;
-}
-
-const ServicesContext = createContext<ServicesContextValue | null>(null);
+import { ServicesContext } from './servicesContext';
+import type { ServicesContextValue } from './servicesContext';
 
 type BootState =
   | { status: 'loading' }
@@ -80,16 +74,4 @@ export function ServicesProvider({
   if (state.status === 'error') return <>{renderError(state.error, retry)}</>;
 
   return <ServicesContext.Provider value={state.value}>{children}</ServicesContext.Provider>;
-}
-
-export function useServices(): AppServices {
-  const context = useContext(ServicesContext);
-  if (!context) {
-    throw new Error('useServices must be used inside ServicesProvider');
-  }
-  return context.services;
-}
-
-export function useSchemaVersion(): number {
-  return useContext(ServicesContext)?.schemaVersion ?? 0;
 }

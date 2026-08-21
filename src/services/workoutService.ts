@@ -106,6 +106,41 @@ export class WorkoutService {
   }
 
   /**
+   * Completed performances of one variation, newest first. Used to show what
+   * the player did last time on the exercise in front of them.
+   */
+  async listVariationHistory(variationId: string): Promise<ExercisePerformanceWithSets[]> {
+    return this.repositories.sessions.listPerformancesForVariation(variationId);
+  }
+
+  /**
+   * The most recent completed performance of each variation in the session,
+   * keyed by the current session's performance id, excluding the session
+   * itself.
+   */
+  async loadPreviousPerformances(
+    session: WorkoutSessionDetail,
+  ): Promise<Record<string, ExercisePerformanceWithSets | null>> {
+    const byVariation = new Map<string, ExercisePerformanceWithSets | null>();
+
+    for (const performance of session.performances) {
+      if (byVariation.has(performance.variationId)) continue;
+      const history = await this.listVariationHistory(performance.variationId);
+      byVariation.set(
+        performance.variationId,
+        history.find((record) => record.sessionId !== session.id) ?? null,
+      );
+    }
+
+    return Object.fromEntries(
+      session.performances.map((performance) => [
+        performance.id,
+        byVariation.get(performance.variationId) ?? null,
+      ]),
+    );
+  }
+
+  /**
    * Starts a session from the given plan. If one is already active it is
    * returned unchanged — a player can only be inside one quest at a time, and
    * silently discarding the old one would lose recorded sets.
