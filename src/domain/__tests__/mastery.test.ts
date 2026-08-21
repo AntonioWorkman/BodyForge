@@ -105,11 +105,18 @@ describe('progression offers', () => {
   const current = VARIATIONS_BY_ID.get('var-bss-standard')!;
 
   it('offers nothing before the criteria are met', () => {
-    expect(buildProgressionOffer(current, state({ qualifyingSessions: 1 }), chain)).toBeNull();
+    expect(
+      buildProgressionOffer(current, state({ qualifyingSessions: 1 }), chain, 'awakening'),
+    ).toBeNull();
   });
 
   it('offers the next variation up once qualified', () => {
-    const offer = buildProgressionOffer(current, state({ qualifyingSessions: 2 }), chain);
+    const offer = buildProgressionOffer(
+      current,
+      state({ qualifyingSessions: 2 }),
+      chain,
+      'awakening',
+    );
     expect(offer?.to.id).toBe('var-bss-slow');
     expect(offer?.formRequirements.length).toBeGreaterThan(0);
   });
@@ -120,6 +127,7 @@ describe('progression offers', () => {
       top,
       state({ variationId: top.id, qualifyingSessions: 5 }),
       chain,
+      'ascension',
     );
     expect(offer).toBeNull();
   });
@@ -129,6 +137,7 @@ describe('progression offers', () => {
       current,
       state({ status: 'mastered', qualifyingSessions: 5 }),
       chain,
+      'awakening',
     );
     expect(offer).toBeNull();
   });

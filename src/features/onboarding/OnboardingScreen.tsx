@@ -52,10 +52,13 @@ export function OnboardingScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      setAvatarUri(result.assets[0].uri);
+      // Copied into app-owned storage immediately; picking again replaces the
+      // previous copy rather than leaving it behind.
+      const owned = await services.player.storeAvatar(result.assets[0].uri, avatarUri);
+      setAvatarUri(owned);
       fireHaptic('selection');
     }
-  }, []);
+  }, [avatarUri, services]);
 
   const begin = useCallback(async () => {
     if (submitting) return;

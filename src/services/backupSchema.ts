@@ -174,36 +174,97 @@ export function validateBackup(raw: string): BackupValidationResult {
   };
 }
 
+/**
+ * Structural checks the Zod schema cannot express.
+ *
+ * The point is that "validated" means "importable": every uniqueness and
+ * relationship rule SQLite would reject is caught here, before the destructive
+ * replacement begins. A document that fails at the database instead would take
+ * the player's existing data down with it.
+ *
+ * Constraints covered, matching the schema in `migrations/`:
+ *
+ * - `workout_session.id` primary key
+ * - `exercise_performance.id` primary key, across all sessions
+ * - `set_performance.id` primary key, across all performances
+ * - `set_performance (performance_id, set_number)` unique
+ * - `measurement.id` primary key
+ * - `progression_state.variation_id` primary key
+ * - `workout_template_exercise.id` primary key
+ * - performance→session and set→performance parent references
+ * - completed sessions carrying a completion time
+ *
+ * References to catalog variations are deliberately *not* checked: a backup may
+ * legitimately predate or postdate this build's catalog, and the importer skips
+ * unknown ones rather than aborting.
+ */
 function checkReferentialIntegrity(backup: Backup): string[] {
   const errors: string[] = [];
-  const sessionIds = new Set(backup.sessions.map((session) => session.id));
 
-  if (sessionIds.size !== backup.sessions.length) {
-    errors.push('sessions: duplicate session identifiers.');
-  }
+  /** Records an error the first time a given key is seen twice. */
+  const seen = new Map<string, Set<string>>();
+  const duplicate = (bucket: string, key: string): boolean => {
+    const keys = seen.get(bucket) ?? new Set<string>();
+    seen.set(bucket, keys);
+    if (keys.has(key)) return true;
+    keys.add(key);
+    return false;
+  };
 
   for (const session of backup.sessions) {
-    for (const performance of session.performances) {
-      if (performance.sessionId !== session.id) {
-        errors.push(`sessions.${session.id}: an exercise belongs to a different session.`);
-        break;
-      }
-      for (const set of performance.sets) {
-        if (set.performanceId !== performance.id) {
-          errors.push(`sessions.${session.id}: a set belongs to a different exercise.`);
-          break;
-        }
-      }
+    if (duplicate('session', session.id)) {
+      errors.push(`sessions: duplicate session identifier "${session.id}".`);
     }
 
     if (session.status === 'completed' && !session.completedAt) {
       errors.push(`sessions.${session.id}: completed session has no completion time.`);
     }
+
+    for (const performance of session.performances) {
+      if (performance.sessionId !== session.id) {
+        errors.push(`sessions.${session.id}: an exercise belongs to a different session.`);
+      }
+
+      // Performance ids are unique across the whole database, not per session.
+      if (duplicate('performance', performance.id)) {
+        errors.push(`sessions.${session.id}: duplicate exercise identifier "${performance.id}".`);
+      }
+
+      for (const set of performance.sets) {
+        if (set.performanceId !== performance.id) {
+          errors.push(`sessions.${session.id}: a set belongs to a different exercise.`);
+        }
+
+        if (duplicate('set', set.id)) {
+          errors.push(`sessions.${session.id}: duplicate set identifier "${set.id}".`);
+        }
+
+        // The schema also has a unique index on (performance_id, set_number).
+        if (duplicate('setNumber', `${set.performanceId}#${set.setNumber}`)) {
+          errors.push(
+            `sessions.${session.id}: exercise "${performance.id}" has set ${set.setNumber} twice.`,
+          );
+        }
+      }
+    }
   }
 
-  const measurementIds = new Set(backup.measurements.map((m) => m.id));
-  if (measurementIds.size !== backup.measurements.length) {
-    errors.push('measurements: duplicate measurement identifiers.');
+  for (const measurement of backup.measurements) {
+    if (duplicate('measurement', measurement.id)) {
+      errors.push(`measurements: duplicate measurement identifier "${measurement.id}".`);
+    }
+  }
+
+  for (const state of backup.progression) {
+    if (duplicate('progression', state.variationId)) {
+      errors.push(`progression: duplicate entry for variation "${state.variationId}".`);
+    }
+  }
+
+  for (const entry of backup.templateExercises) {
+    if (duplicate('templateExercise', entry.id)) {
+      errors.push(`templateExercises: duplicate identifier "${entry.id}".`);
+    }
   }
 
   return errors.slice(0, 8);

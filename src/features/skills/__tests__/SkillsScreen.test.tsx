@@ -133,6 +133,38 @@ describe('Skills screen', () => {
     expect(title).toBe('Confirm progression');
   });
 
+  it('says the criteria are met when the next variation is phase-gated', async () => {
+    // The glute bridge appears in both workouts, so it qualifies quickly, and
+    // its successor is introduced in Development.
+    await qualifyingSession(harness.services);
+    await qualifyingSession(harness.services);
+    await qualifyingSession(harness.services);
+
+    await open();
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText('Single-Leg Glute Bridge, Criteria met · Unlocks in Development'),
+      ).toBeTruthy(),
+    );
+  });
+
+  it('offers no confirmation for a phase-gated progression', async () => {
+    await qualifyingSession(harness.services);
+    await qualifyingSession(harness.services);
+    await qualifyingSession(harness.services);
+
+    await open();
+    await fireEvent.press(
+      screen.getByLabelText('Single-Leg Glute Bridge, Criteria met · Unlocks in Development'),
+    );
+    await waitFor(() => expect(screen.getByTestId('skill-node-sheet')).toBeTruthy());
+
+    // The gate is explained rather than the button simply being absent.
+    expect(screen.getByTestId('progression-phase-gated')).toBeTruthy();
+    expect(screen.getByText(/introduced in the Development/)).toBeTruthy();
+    expect(screen.queryByTestId('confirm-progression')).toBeNull();
+  });
+
   it('states that a locked variation cannot be trained yet', async () => {
     await open();
     await waitFor(() => expect(screen.getByTestId('skill-node-var-push-up-slow')).toBeTruthy());

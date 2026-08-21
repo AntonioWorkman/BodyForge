@@ -4,8 +4,11 @@ import {
   countQualifyingSessions,
   deriveStatus,
   masteryProgress,
+  phaseRank,
 } from '@/domain/mastery';
 import type { ProgressionOffer } from '@/domain/mastery';
+import type { UnitOfWork } from '@/database/unitOfWork';
+import { ProgressionNotReadyError, ProgressionPhaseLockedError } from '@/domain/errors';
 import { phaseForSessionCount } from '@/domain/phases';
 import type {
   ExerciseVariation,
@@ -38,6 +41,13 @@ export interface ProgressionNode {
   unlockedAt: string | null;
   /** True when the player's phase has not yet reached this variation. */
   phaseGated: boolean;
+  /**
+   * Set when the player has met the criteria to progress past this variation
+   * but the next one is gated behind a later phase. The criteria are earned;
+   * the gate is not about performance, so the UI says so rather than going
+   * quiet.
+   */
+  progressionAwaitingPhase: PhaseId | null;
 }
 
 export interface ProgressionChainView {
@@ -55,7 +65,10 @@ export interface ConfirmProgressionResult {
 }
 
 export class ProgressionService {
-  constructor(private readonly repositories: RepositoryBundle) {}
+  constructor(
+    private readonly repositories: RepositoryBundle,
+    private readonly unitOfWork: UnitOfWork,
+  ) {}
 
   /** The whole tree, ready for the Skills screen to lay out. */
   async getChains(): Promise<ProgressionChainView[]> {
@@ -87,7 +100,7 @@ export class ProgressionService {
       );
 
       const nodes: ProgressionNode[] = [];
-      for (const variation of chainVariations) {
+      for (const [index, variation] of chainVariations.entries()) {
         const state = stateByVariation.get(variation.id) ?? fallbackState(variation.id);
         const history = historyByVariation.get(variation.id) ?? [];
 
@@ -99,9 +112,21 @@ export class ProgressionService {
           }
         }
 
+        // A variation whose criteria are met but whose successor is gated: the
+        // node stays `ready`, and this records why it cannot be acted on.
+        const derived = deriveStatus(state);
+        const next = chainVariations[index + 1];
+        const progressionAwaitingPhase =
+          derived === 'ready' &&
+          next !== undefined &&
+          phaseRank(next.minimumPhase) > currentPhase.order
+            ? next.minimumPhase
+            : null;
+
         nodes.push({
           variation,
-          status: deriveStatus(state),
+          status: derived,
+          progressionAwaitingPhase,
           qualifyingSessions: state.qualifyingSessions,
           masteryProgress: masteryProgress(state.qualifyingSessions),
           bestRecorded: best,
@@ -125,10 +150,18 @@ export class ProgressionService {
   }
 
   /** The progression offer for a variation, or null if not yet qualified. */
+  /**
+   * The progression offer for a variation, or null if not yet qualified.
+   *
+   * An offer that is earned but phase-gated is still returned, with
+   * `phaseEligible: false` — the player has met the criteria and should be told
+   * so, they simply cannot act on it yet.
+   */
   async getOffer(variationId: string): Promise<ProgressionOffer | null> {
-    const [variations, state] = await Promise.all([
+    const [variations, state, completedCount] = await Promise.all([
       this.repositories.catalog.listVariations(),
       this.repositories.progression.get(variationId),
+      this.repositories.sessions.countCompleted(),
     ]);
     if (!state) return null;
 
@@ -139,10 +172,18 @@ export class ProgressionService {
       .filter((candidate) => candidate.chainId === variation.chainId)
       .sort((a, b) => a.tier - b.tier);
 
-    return buildProgressionOffer(variation, state, chainVariations);
+    return buildProgressionOffer(
+      variation,
+      state,
+      chainVariations,
+      phaseForSessionCount(completedCount).id,
+    );
   }
 
-  /** Every variation currently waiting for the player's confirmation. */
+  /**
+   * Variations the player can act on now. Phase-gated offers are excluded —
+   * they are surfaced on the Skills tree instead, where the reason is shown.
+   */
   async listReadyOffers(): Promise<ProgressionOffer[]> {
     const states = await this.repositories.progression.list();
     const offers: ProgressionOffer[] = [];
@@ -150,7 +191,7 @@ export class ProgressionService {
     for (const state of states) {
       if (deriveStatus(state) !== 'ready') continue;
       const offer = await this.getOffer(state.variationId);
-      if (offer) offers.push(offer);
+      if (offer?.phaseEligible) offers.push(offer);
     }
 
     return offers;
@@ -161,34 +202,59 @@ export class ProgressionService {
    * mastered, the next becomes current, and every template that prescribed the
    * old one now prescribes the new one. Recorded history is untouched.
    */
+  /**
+   * Applies a progression the player has confirmed: the old variation becomes
+   * mastered, the next becomes current, every template that prescribed the old
+   * one now prescribes the new one, and the bonus is paid. Recorded history is
+   * untouched.
+   *
+   * Phase eligibility is re-checked here rather than trusted from the UI — a
+   * disabled button is not a correctness boundary, and this is reachable
+   * directly.
+   *
+   * All four writes happen in one transaction: a failure partway through used
+   * to be able to leave one variation mastered with nothing current, or the
+   * chain moved with the bonus unpaid.
+   */
   async confirmProgression(
     variationId: string,
     now = new Date(),
   ): Promise<ConfirmProgressionResult> {
     const offer = await this.getOffer(variationId);
     if (!offer) {
-      throw new Error('This variation is not ready to progress');
+      throw new ProgressionNotReadyError(variationId);
+    }
+
+    if (!offer.phaseEligible) {
+      const completedCount = await this.repositories.sessions.countCompleted();
+      throw new ProgressionPhaseLockedError(
+        offer.to.name,
+        offer.requiredPhase,
+        phaseForSessionCount(completedCount).id,
+      );
     }
 
     const timestamp = now.toISOString();
 
-    await this.repositories.progression.setStatus(offer.from.id, 'mastered', timestamp);
-    await this.repositories.progression.upsert({
-      variationId: offer.to.id,
-      status: 'current',
-      qualifyingSessions: 0,
-      startedAt: timestamp,
-      masteredAt: null,
-      unlockedAt: timestamp,
+    const totalXpAfter = await this.unitOfWork.run(async (repos) => {
+      await repos.progression.setStatus(offer.from.id, 'mastered', timestamp);
+      await repos.progression.upsert({
+        variationId: offer.to.id,
+        status: 'current',
+        qualifyingSessions: 0,
+        startedAt: timestamp,
+        masteredAt: null,
+        unlockedAt: timestamp,
+      });
+
+      const templateExercises = await repos.catalog.listTemplateExercises();
+      for (const entry of templateExercises) {
+        if (entry.variationId !== offer.from.id) continue;
+        await repos.catalog.replaceTemplateExerciseVariation(entry.id, offer.to.id);
+      }
+
+      return repos.player.addXp(XP_RULES.progressionBonus);
     });
-
-    const templateExercises = await this.repositories.catalog.listTemplateExercises();
-    for (const entry of templateExercises) {
-      if (entry.variationId !== offer.from.id) continue;
-      await this.repositories.catalog.replaceTemplateExerciseVariation(entry.id, offer.to.id);
-    }
-
-    const totalXpAfter = await this.repositories.player.addXp(XP_RULES.progressionBonus);
 
     return {
       from: offer.from,

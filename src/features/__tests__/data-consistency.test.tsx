@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 
 import { migrate } from '@/database/migrations';
 import { createRepositories } from '@/database/repositories/sqlite';
+import { createUnitOfWork } from '@/database/unitOfWork';
 import { seedCatalog } from '@/database/seed';
 import { resolveLevel } from '@/domain/levels';
 import { ServicesContext } from '@/providers/servicesContext';
@@ -45,7 +46,12 @@ describe('cross-screen data consistency', () => {
     await seedCatalog(db, '2026-08-01T09:00:00.000Z');
 
     const repositories = createRepositories(db);
-    services = createServices({ db, repositories, schemaVersion: 1 });
+    services = createServices({
+      db,
+      repositories,
+      unitOfWork: createUnitOfWork(db),
+      schemaVersion: 1,
+    });
 
     await services.player.createPlayer({
       name: 'Consistency',

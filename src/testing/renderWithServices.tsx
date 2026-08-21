@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { migrate } from '@/database/migrations';
 import { createRepositories } from '@/database/repositories/sqlite';
+import { createUnitOfWork } from '@/database/unitOfWork';
 import { seedCatalog } from '@/database/seed';
 import type { SqlDatabase } from '@/database/sqlDatabase';
 import { createServices } from '@/services';
@@ -42,7 +43,12 @@ export async function renderWithServices(
   await seedCatalog(db, new Date('2026-08-01T09:00:00.000Z').toISOString());
 
   const repositories = createRepositories(db);
-  const services = createServices({ db, repositories, schemaVersion: 1 });
+  const services = createServices({
+    db,
+    repositories,
+    unitOfWork: createUnitOfWork(db),
+    schemaVersion: 1,
+  });
 
   await services.player.createPlayer({
     name: options.playerName ?? 'Test Player',

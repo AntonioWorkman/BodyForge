@@ -51,6 +51,64 @@ screen calls `completeSession(id)` and gets back a summary it can render.
 
 ---
 
+## Transactions
+
+A service-level command that writes to more than one table has to be
+all-or-nothing. `completeSession` marks the session complete, awards XP,
+advances the rotation and refreshes mastery; a crash between any two of those
+used to leave the player split — and unretryable, because the session was
+already flagged complete.
+
+`src/database/unitOfWork.ts` is the boundary. The ownership rule is narrow,
+because Expo SQLite issues a bare `BEGIN` and cannot nest:
+
+| Who           | May open a transaction?                                                 |
+| ------------- | ----------------------------------------------------------------------- |
+| `UnitOfWork`  | Yes — it is the only thing that opens one around a command              |
+| Repositories  | No, inside a unit of work: `withTransactionAsync` joins the ambient one |
+| Repositories  | Yes, called directly: unchanged, they open and commit their own         |
+| `seedCatalog` | Opens its own, so it must never be called from inside one               |
+
+A service asks for a bundle bound to one transaction rather than reaching for
+the database, so SQL stays confined to the repositories:
+
+```ts
+const result = await this.unitOfWork.run(async (repos) => {
+  await repos.sessions.complete({ ... });
+  const xpAfter = await repos.player.addXp(xp.total);
+  await repos.player.update({ nextTemplateRotationOrder: next });
+  return xpAfter;
+});
+```
+
+Atomicity is proven by failure, not by happy-path tests.
+`src/testing/faultInjection.ts` wraps the database so a named statement throws,
+and `atomicity.test.ts` asserts nothing survived. Neutering the transaction
+fails 7 of those 9 tests.
+
+---
+
+## Invariants enforced in the service layer
+
+Two rules are enforced below the UI, because navigation is not a correctness
+boundary and both commands are reachable directly.
+
+**A quest completes only when it is finished.** The workout screen allows
+non-linear navigation, so a player can reach the final exercise without having
+done the earlier ones. `completeSession` throws `WorkoutIncompleteError` — with
+the list of what remains — and mutates nothing. The screen uses the same domain
+function to send the player back to the first exercise still owing sets, rather
+than letting them hit the error.
+
+**Progression respects the phase gate.** Meeting the performance criteria is
+about performance; the phase gate is about how much training has been done
+overall. `getOffer` still returns an earned-but-gated offer, flagged
+`phaseEligible: false`, so the tree can say _Criteria met · Unlocks in
+Development_ instead of going quiet. `confirmProgression` re-checks and throws
+`ProgressionPhaseLockedError` regardless of what the UI allowed.
+
+---
+
 ## Data model
 
 Three entities that are easy to conflate are deliberately separate:
@@ -180,3 +238,40 @@ Native is the target. Two files exist only for web and do not affect it:
 
 `scripts/prepare-web-assets.js` copies `canvaskit.wasm` from node_modules into
 `public/` on install. The binary is not committed.
+
+---
+
+## Avatars and what a backup carries
+
+An image picker returns a URI into a temporary or shared location, so the picked
+file is copied into the app's own document directory and that path is what the
+profile stores. `AvatarStore` is a three-method interface — `save`, `remove`,
+`owns` — so both onboarding and Settings go through one implementation, and
+tests use an in-memory version rather than touching a filesystem.
+
+The JSON backup carries no image data. Exporting the avatar path would restore a
+reference to a file the other device does not have — an avatar that looks like
+it survived but is broken — so `avatarUri` is exported as `null` and the player
+sets a new one. Packaging media into an archive is deliberately out of scope for
+this format.
+
+Backup validation covers every uniqueness and parent-reference rule the schema
+enforces, so a document that passes `validateBackup` is structurally importable.
+That matters because the import clears the player's tables before inserting:
+failing at SQLite instead would take the existing data down with it. References
+to catalog variations are deliberately _not_ validated — a backup may
+legitimately predate or postdate this build's catalog, and unknown ones are
+skipped.
+
+---
+
+## CI
+
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`:
+
+- **verify** — `npm ci`, `npm run typecheck`, `npm run lint`, `npm test`
+- **bundle** — exports the iOS and Android bundles and asserts both `.hbc`
+  files exist
+
+The bundle job exists because a type-correct app can still fail to bundle: a
+web-only import once broke the native graph while every test stayed green.

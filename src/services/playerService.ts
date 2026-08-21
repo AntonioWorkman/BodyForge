@@ -17,6 +17,7 @@ import type {
   WorkoutSessionDetail,
 } from '@/domain/types';
 
+import type { AvatarStore } from './avatarStore';
 import { createId } from './ids';
 
 /**
@@ -54,7 +55,33 @@ export interface CreatePlayerInput {
 }
 
 export class PlayerService {
-  constructor(private readonly repositories: RepositoryBundle) {}
+  constructor(
+    private readonly repositories: RepositoryBundle,
+    private readonly avatars: AvatarStore,
+  ) {}
+
+  /**
+   * Copies a picked image into app-owned storage and returns the owned URI,
+   * discarding the previous owned file. Used during onboarding, where there is
+   * no profile row to update yet.
+   */
+  async storeAvatar(sourceUri: string, previousUri: string | null = null): Promise<string> {
+    const owned = await this.avatars.save(sourceUri);
+    await this.avatars.remove(previousUri);
+    return owned;
+  }
+
+  /**
+   * Replaces the player's avatar: the new image is copied into app-owned
+   * storage, the profile is updated, and the previous owned file is removed.
+   */
+  async updateAvatar(sourceUri: string): Promise<string> {
+    const profile = await this.repositories.player.get();
+    const owned = await this.avatars.save(sourceUri);
+    await this.repositories.player.update({ avatarUri: owned });
+    await this.avatars.remove(profile?.avatarUri ?? null);
+    return owned;
+  }
 
   /** Creates the single player row and finishes onboarding. */
   async createPlayer(input: CreatePlayerInput, now = new Date()): Promise<PlayerProfile> {

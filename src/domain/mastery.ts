@@ -1,6 +1,9 @@
+import type { IncompleteExercise } from './errors';
+import { PHASE_IDS } from './types';
 import type {
   ExercisePerformanceWithSets,
   ExerciseVariation,
+  PhaseId,
   ProgressionState,
   ProgressionStatus,
   SetPerformance,
@@ -92,6 +95,16 @@ export interface ProgressionOffer {
   /** Technique standard the player is asked to confirm. */
   formRequirements: string[];
   qualifyingSessions: number;
+  /**
+   * Whether the player's phase has reached the next variation's minimum.
+   *
+   * An offer can be earned but not yet actionable: the criteria are about
+   * performance, the phase gate is about how much training has been done
+   * overall. Only an offer with this set may be confirmed.
+   */
+  phaseEligible: boolean;
+  /** The phase the next variation is introduced in. */
+  requiredPhase: PhaseId;
 }
 
 /**
@@ -102,6 +115,7 @@ export function buildProgressionOffer(
   current: ExerciseVariation,
   state: ProgressionState,
   chainVariations: readonly ExerciseVariation[],
+  currentPhase: PhaseId,
 ): ProgressionOffer | null {
   if (!meetsProgressionCriteria(state.qualifyingSessions)) return null;
   if (state.status === 'mastered') return null;
@@ -117,5 +131,51 @@ export function buildProgressionOffer(
     to: next,
     formRequirements: next.formRequirements,
     qualifyingSessions: state.qualifyingSessions,
+    phaseEligible: phaseRank(currentPhase) >= phaseRank(next.minimumPhase),
+    requiredPhase: next.minimumPhase,
   };
+}
+
+/** Ordinal of a phase, for comparing how far a player has progressed. */
+export function phaseRank(phase: PhaseId): number {
+  const index = PHASE_IDS.indexOf(phase);
+  return index < 0 ? 0 : index;
+}
+
+/**
+ * Exercises in a session that still owe prescribed sets.
+ *
+ * A session is only complete when every exercise has recorded all of its
+ * prescribed sets. This is what stops a player jumping to the last exercise,
+ * finishing it, and having the whole quest counted — which would award quest
+ * XP and advance rotation, phase and Core progression on work never done.
+ */
+export function findIncompleteExercises(
+  performances: readonly ExercisePerformanceWithSets[],
+): IncompleteExercise[] {
+  const incomplete: IncompleteExercise[] = [];
+
+  for (const performance of [...performances].sort((a, b) => a.position - b.position)) {
+    const recorded = new Set(
+      performance.sets
+        .map((set) => set.setNumber)
+        .filter((setNumber) => setNumber >= 1 && setNumber <= performance.prescribed.sets),
+    );
+
+    if (recorded.size >= performance.prescribed.sets) continue;
+
+    incomplete.push({
+      position: performance.position,
+      variationName: performance.variationName,
+      setsCompleted: recorded.size,
+      setsPrescribed: performance.prescribed.sets,
+    });
+  }
+
+  return incomplete;
+}
+
+/** True when every exercise has recorded all of its prescribed sets. */
+export function isSessionComplete(performances: readonly ExercisePerformanceWithSets[]): boolean {
+  return performances.length > 0 && findIncompleteExercises(performances).length === 0;
 }

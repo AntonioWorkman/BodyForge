@@ -24,6 +24,13 @@ import type { ProgressionChainView, ProgressionNode } from '@/services';
 import { SkillNode } from './SkillNode';
 import { TREE_METRICS, layoutTree } from './treeLayout';
 
+/** Phase names as they read in the progression sheet. */
+const PHASE_LABEL: Record<PhaseId, string> = {
+  awakening: 'Awakening',
+  development: 'Development',
+  ascension: 'Ascension',
+};
+
 type Zoom = 'detail' | 'overview';
 
 /** How far the tree is scaled at each zoom level. */
@@ -345,7 +352,18 @@ function NodeSheet({
           </View>
         ) : null}
 
-        {ready ? (
+        {ready && node.progressionAwaitingPhase ? (
+          <View style={styles.sheetSection} testID="progression-phase-gated">
+            <SectionLabel tone="plain">Criteria met</SectionLabel>
+            <Text variant="body" color="textSecondary">
+              You have met the performance criteria to progress past this variation. The next one is
+              introduced in the {PHASE_LABEL[node.progressionAwaitingPhase]} phase, so it unlocks
+              once your completed training reaches it. Keep training this variation until then.
+            </Text>
+          </View>
+        ) : null}
+
+        {ready && !node.progressionAwaitingPhase ? (
           <View style={styles.sheetSection}>
             <Text variant="body" color="textSecondary" style={styles.readyNote}>
               {

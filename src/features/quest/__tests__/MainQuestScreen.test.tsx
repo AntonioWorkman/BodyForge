@@ -210,6 +210,41 @@ describe('Main Quest', () => {
     alertSpy.mockRestore();
   });
 
+  it('will not finish a quest that still has sets outstanding', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+
+    // Jump to the last exercise and complete only that one.
+    await fireEvent.press(screen.getByTestId('quest-list'));
+    await waitFor(() => expect(screen.getByTestId('exercise-list-sheet')).toBeTruthy());
+    await fireEvent.press(screen.getByLabelText('Plank'));
+    await waitFor(() => expect(screen.getByText('7 / 7 exercises')).toBeTruthy());
+
+    for (let set = 0; set < 3; set += 1) {
+      await fireEvent.press(screen.getByTestId('complete-set'));
+      if (screen.queryByTestId('rest-state')) {
+        await fireEvent.press(screen.getByTestId('rest-skip'));
+      }
+    }
+
+    await waitFor(() => expect(screen.getByTestId('quest-advance')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('quest-advance'));
+
+    // Sent back to the first exercise that still owes sets, not to completion.
+    await waitFor(() => expect(screen.getByText('1 / 7 exercises')).toBeTruthy());
+    expect(mockReplace).not.toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/quest/complete' }),
+    );
+
+    const [title, body] = alertSpy.mock.calls[0] as [string, string];
+    expect(title).toBe('Sets still remaining');
+    expect(body).toContain('Bulgarian Split Squat');
+    expect(body).toContain('0 of 3 sets recorded');
+
+    // And nothing was recorded as completed.
+    expect(await harness.services.workouts.listCompletedSessions()).toHaveLength(0);
+    alertSpy.mockRestore();
+  });
+
   it('states plainly that there is no previous record on a first session', () => {
     expect(screen.getByText('No previous record — this session sets your baseline.')).toBeTruthy();
   });

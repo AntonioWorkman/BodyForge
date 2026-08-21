@@ -76,7 +76,9 @@ export function SettingsScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      await services.player.updateProfile({ avatarUri: result.assets[0].uri });
+      // Copied into app-owned storage rather than stored as the picker URI,
+      // which points at a temporary or shared location.
+      await services.player.updateAvatar(result.assets[0].uri);
       fireHaptic('selection');
       await reload();
     }
@@ -156,7 +158,6 @@ export function SettingsScreen() {
           value={settings.unitSystem === 'metric' ? 'kg · cm' : 'lb · in'}
           onPress={() => setChooser('units')}
         />
-        <ValueRow label="Protein target" value="120–140 g / day" />
       </View>
 
       {/* Experience --------------------------------------------------------- */}
@@ -198,7 +199,7 @@ export function SettingsScreen() {
 
         <ActionRow
           label={busy === 'export' ? 'Exporting…' : 'Export data'}
-          description="A portable JSON backup of everything you have recorded."
+          description="Training, measurements and settings as portable JSON. Your avatar image stays on this device."
           onPress={exportData}
         />
         <ActionRow

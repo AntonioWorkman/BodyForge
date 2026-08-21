@@ -42,7 +42,12 @@ export class BackupService {
       app: APP_CONFIG.name,
       formatVersion: APP_CONFIG.backupFormatVersion,
       exportedAt: now.toISOString(),
-      profile,
+      // The avatar is a path into this installation's private storage. A JSON
+      // backup carries no image data, so exporting the path would restore a
+      // reference to a file that does not exist on the other device — an
+      // avatar that appears to have survived but is broken. It is dropped
+      // instead, and the player can set a new one.
+      profile: { ...profile, avatarUri: null },
       settings,
       sessions,
       measurements,

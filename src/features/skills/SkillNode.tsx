@@ -10,7 +10,7 @@ import Animated, {
 
 import { Glyph, Text } from '@/components';
 import { colors, layout, radius, spacing } from '@/design';
-import type { ProgressionStatus } from '@/domain/types';
+import type { PhaseId, ProgressionStatus } from '@/domain/types';
 import { easing } from '@/motion';
 import { useReducedMotion } from '@/motion/useMotionPreference';
 import type { ProgressionNode } from '@/services';
@@ -22,6 +22,13 @@ import type { ProgressionNode } from '@/services';
  * dashed border, mastered nodes show a check, and the current node is the only
  * one that carries a label. That keeps the tree readable without colour vision.
  */
+/** Phase names as they appear in a node's status line. */
+const PHASE_NAMES: Record<PhaseId, string> = {
+  awakening: 'Unlocks in Awakening',
+  development: 'Unlocks in Development',
+  ascension: 'Unlocks in Ascension',
+};
+
 const STATUS_LABEL: Record<ProgressionStatus, string> = {
   locked: 'Locked',
   available: 'Available',
@@ -66,6 +73,13 @@ export function SkillNode({
     opacity: 0.35 + pulse.value * 0.4,
   }));
 
+  // Criteria met, but the next variation is gated behind a later phase. The
+  // player earned this; the label says so rather than just showing "Ready".
+  const awaitingPhase = node.progressionAwaitingPhase;
+  const statusLabel = awaitingPhase
+    ? `Criteria met · ${PHASE_NAMES[awaitingPhase]}`
+    : STATUS_LABEL[node.status];
+
   const locked = node.status === 'locked';
   const mastered = node.status === 'mastered';
   const ready = node.status === 'ready';
@@ -73,7 +87,7 @@ export function SkillNode({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${node.variation.name}, ${STATUS_LABEL[node.status]}`}
+      accessibilityLabel={`${node.variation.name}, ${statusLabel}`}
       accessibilityHint="Opens progression details"
       onPress={onPress}
       style={({ pressed }) => [
@@ -94,10 +108,20 @@ export function SkillNode({
         <Text
           variant="micro"
           uppercase
-          color={ready ? 'highlight' : mastered ? 'success' : locked ? 'textDisabled' : 'textMuted'}
+          color={
+            awaitingPhase
+              ? 'caution'
+              : ready
+                ? 'highlight'
+                : mastered
+                  ? 'success'
+                  : locked
+                    ? 'textDisabled'
+                    : 'textMuted'
+          }
           numberOfLines={1}
         >
-          {STATUS_LABEL[node.status]}
+          {statusLabel}
         </Text>
       </View>
 

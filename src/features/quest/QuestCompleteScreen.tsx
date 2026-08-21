@@ -6,6 +6,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Button, EmptyState, Screen, SectionLabel, Text } from '@/components';
 import { Core } from '@/core';
 import { colors, layout, radius, spacing } from '@/design';
+import { WorkoutIncompleteError } from '@/domain/errors';
 import { formatDuration } from '@/domain/format';
 import { resolveLevel } from '@/domain/levels';
 import { stagger, timing } from '@/motion';
@@ -36,6 +37,7 @@ export function QuestCompleteScreen() {
   const [player, setPlayer] = useState<PlayerState | null>(null);
   const [nextDirective, setNextDirective] = useState<string>('Recovery');
   const [error, setError] = useState<string | null>(null);
+  const [returnToQuest, setReturnToQuest] = useState(false);
 
   // The session is completed and saved here, before anything is displayed —
   // the player never has to reach this screen for their work to be recorded.
@@ -60,8 +62,16 @@ export function QuestCompleteScreen() {
         setPlayer(state);
         setNextDirective(plan ? `${plan.template.name} · ${plan.template.focus}` : 'Recovery');
         clearWorkout();
-      } catch {
-        if (!cancelled) setError('This quest has already been recorded.');
+      } catch (caught) {
+        if (cancelled) return;
+        // An incomplete quest is a distinct case from one already recorded:
+        // the player still has work outstanding and should be sent back to it.
+        if (caught instanceof WorkoutIncompleteError) {
+          setError(caught.message);
+          setReturnToQuest(true);
+          return;
+        }
+        setError('This quest has already been recorded.');
       }
     })();
 
@@ -80,8 +90,14 @@ export function QuestCompleteScreen() {
   if (error) {
     return (
       <Screen>
-        <EmptyState title="Nothing to record" message={error} />
-        <Button label="Back to System" onPress={finish} />
+        <EmptyState
+          title={returnToQuest ? 'Quest not finished' : 'Nothing to record'}
+          message={error}
+        />
+        <Button
+          label={returnToQuest ? 'Back to quest' : 'Back to System'}
+          onPress={returnToQuest ? () => router.replace('/quest/active') : finish}
+        />
       </Screen>
     );
   }

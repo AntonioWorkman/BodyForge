@@ -125,6 +125,23 @@ describe('Settings screen', () => {
     expect(plan?.entries).toHaveLength(7);
   });
 
+  it('shows no nutrition target, which the app does not calculate', async () => {
+    await open();
+
+    // Removed in review: the value was hardcoded, with no nutrition model,
+    // user input or calculation behind it. Nutrition is out of scope for this
+    // phase, and an invented number is worse than none.
+    expect(screen.queryByText(/Protein/i)).toBeNull();
+    expect(screen.queryByText(/g \/ day/)).toBeNull();
+  });
+
+  it('describes what a backup actually carries', async () => {
+    await open();
+
+    // The avatar image is not in the JSON, so the copy must not imply it is.
+    expect(screen.getByText(/Your avatar image stays on this device/)).toBeTruthy();
+  });
+
   it('states that the app is local-only', async () => {
     await open();
     expect(screen.getByText(/stored in a database on this device only/)).toBeTruthy();

@@ -172,6 +172,147 @@ describe('backup export and import', () => {
     expect(result.errors.join(' ')).toMatch(/different exercise/);
   });
 
+  describe('uniqueness constraints', () => {
+    /**
+     * Each of these would be rejected by SQLite mid-import. Validation has to
+     * catch them first, or a malformed document takes the player's existing
+     * data down with it — clearPlayerTables runs before the inserts.
+     */
+    async function documentWith(mutate: (doc: Record<string, any>) => void) {
+      await seedRealData();
+      const doc = JSON.parse(await harness.backup.exportToJson());
+      mutate(doc);
+      return JSON.stringify(doc);
+    }
+
+    it('rejects duplicate session identifiers', async () => {
+      const raw = await documentWith((doc) => {
+        doc.sessions.push(JSON.parse(JSON.stringify(doc.sessions[0])));
+      });
+      const result = validateBackup(raw);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.join(' ')).toMatch(/duplicate session identifier/);
+    });
+
+    it('rejects duplicate performance identifiers across sessions', async () => {
+      const raw = await documentWith((doc) => {
+        doc.sessions[1].performances[0].id = doc.sessions[0].performances[0].id;
+      });
+      const result = validateBackup(raw);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.join(' ')).toMatch(/duplicate exercise identifier/);
+    });
+
+    it('rejects duplicate set identifiers', async () => {
+      const raw = await documentWith((doc) => {
+        const sets = doc.sessions[0].performances[0].sets;
+        sets[1].id = sets[0].id;
+      });
+      const result = validateBackup(raw);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.join(' ')).toMatch(/duplicate set identifier/);
+    });
+
+    it('rejects a repeated set number within one exercise', async () => {
+      const raw = await documentWith((doc) => {
+        const sets = doc.sessions[0].performances[0].sets;
+        // Distinct ids, but the same (performanceId, setNumber) pair.
+        sets[1].setNumber = sets[0].setNumber;
+      });
+      const result = validateBackup(raw);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.join(' ')).toMatch(/set \d+ twice/);
+    });
+
+    it('rejects duplicate measurement identifiers', async () => {
+      const raw = await documentWith((doc) => {
+        doc.measurements[1].id = doc.measurements[0].id;
+      });
+      expect(validateBackup(raw).ok).toBe(false);
+    });
+
+    it('rejects duplicate progression entries for one variation', async () => {
+      const raw = await documentWith((doc) => {
+        doc.progression.push(JSON.parse(JSON.stringify(doc.progression[0])));
+      });
+      const result = validateBackup(raw);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.join(' ')).toMatch(/duplicate entry for variation/);
+    });
+
+    it('rejects duplicate template-exercise identifiers', async () => {
+      const raw = await documentWith((doc) => {
+        doc.templateExercises.push(JSON.parse(JSON.stringify(doc.templateExercises[0])));
+      });
+      const result = validateBackup(raw);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.join(' ')).toMatch(/templateExercises: duplicate/);
+    });
+
+    it('rejects malformed documents before anything is written', async () => {
+      await seedRealData();
+      const before = await harness.repositories.sessions.listCompleted();
+
+      const doc = JSON.parse(await harness.backup.exportToJson());
+      doc.sessions[1].performances[0].id = doc.sessions[0].performances[0].id;
+
+      await expect(harness.backup.import(JSON.stringify(doc))).rejects.toThrow();
+
+      // The regression this guards: reaching SQLite would have cleared the
+      // player's tables before failing.
+      expect(await harness.repositories.sessions.listCompleted()).toEqual(before);
+      expect(await harness.repositories.player.get()).not.toBeNull();
+    });
+
+    it('still accepts a well-formed document', async () => {
+      await seedRealData();
+      expect(validateBackup(await harness.backup.exportToJson()).ok).toBe(true);
+    });
+  });
+
+  describe('avatar portability', () => {
+    it('exports no avatar path, since the image itself is not in the document', async () => {
+      await seedRealData();
+      await harness.player.updateAvatar('file:///picker/tmp/photo.jpg');
+      expect((await harness.repositories.player.get())?.avatarUri).toMatch(/\/avatars\//);
+
+      const document = JSON.parse(await harness.backup.exportToJson());
+      expect(document.profile.avatarUri).toBeNull();
+    });
+
+    it('does not restore a stale installation-specific path', async () => {
+      await seedRealData();
+      await harness.player.updateAvatar('file:///picker/tmp/photo.jpg');
+      const json = await harness.backup.exportToJson();
+
+      await harness.backup.clearAll();
+      await harness.backup.import(json);
+
+      // An avatar that appears to have survived but points at a file this
+      // installation does not have would be worse than none.
+      expect((await harness.repositories.player.get())?.avatarUri).toBeNull();
+    });
+
+    it('leaves everything else about the profile intact', async () => {
+      await seedRealData();
+      await harness.player.updateAvatar('file:///picker/tmp/photo.jpg');
+      const before = await harness.repositories.player.get();
+
+      const json = await harness.backup.exportToJson();
+      await harness.backup.clearAll();
+      await harness.backup.import(json);
+
+      const after = await harness.repositories.player.get();
+      expect(after).toEqual({ ...before, avatarUri: null });
+    });
+  });
+
   it('writes nothing when an import is rejected', async () => {
     await seedRealData();
     const before = await harness.repositories.sessions.listCompleted();

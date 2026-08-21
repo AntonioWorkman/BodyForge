@@ -1,8 +1,12 @@
 import { migrate } from '@/database/migrations';
 import { createRepositories } from '@/database/repositories/sqlite';
+import { createUnitOfWork } from '@/database/unitOfWork';
 import type { RepositoryBundle } from '@/database/repositories/interfaces';
 import { seedCatalog } from '@/database/seed';
 import type { SqlDatabase } from '@/database/sqlDatabase';
+import type { UnitOfWork } from '@/database/unitOfWork';
+import { createMemoryAvatarStore } from '@/testing/memoryAvatarStore';
+import type { MemoryAvatarStore } from '@/testing/memoryAvatarStore';
 import { createTestDatabase } from '@/testing/nodeSqlite';
 
 import { BackupService } from '../backupService';
@@ -18,6 +22,8 @@ import { WorkoutService } from '../workoutService';
 export interface TestHarness {
   db: SqlDatabase & { close: () => void };
   repositories: RepositoryBundle;
+  unitOfWork: UnitOfWork;
+  avatars: MemoryAvatarStore;
   player: PlayerService;
   workouts: WorkoutService;
   progression: ProgressionService;
@@ -34,13 +40,17 @@ export async function createHarness(
   await seedCatalog(db, now.toISOString());
 
   const repositories = createRepositories(db);
+  const unitOfWork = createUnitOfWork(db);
+  const avatars = createMemoryAvatarStore();
 
   return {
     db,
     repositories,
-    player: new PlayerService(repositories),
-    workouts: new WorkoutService(repositories),
-    progression: new ProgressionService(repositories),
+    unitOfWork,
+    avatars,
+    player: new PlayerService(repositories, avatars),
+    workouts: new WorkoutService(repositories, unitOfWork),
+    progression: new ProgressionService(repositories, unitOfWork),
     measurements: new MeasurementService(repositories),
     backup: new BackupService(repositories, db),
     close: () => db.close(),

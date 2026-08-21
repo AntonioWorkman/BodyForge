@@ -27,7 +27,7 @@ describe('active workout recovery', () => {
     // A fresh service over the same database stands in for a relaunch.
     const { WorkoutService } =
       await jest.requireActual<typeof import('../workoutService')>('../workoutService');
-    const fresh = new WorkoutService(harness.repositories);
+    const fresh = new WorkoutService(harness.repositories, harness.unitOfWork);
 
     const recovered = await fresh.getActiveSession();
     expect(recovered?.id).toBe(started.id);

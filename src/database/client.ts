@@ -6,6 +6,8 @@ import { fromExpoDatabase } from './expoAdapter';
 import { migrate } from './migrations';
 import { createRepositories } from './repositories/sqlite';
 import type { RepositoryBundle } from './repositories/interfaces';
+import { createUnitOfWork } from './unitOfWork';
+import type { UnitOfWork } from './unitOfWork';
 import { seedCatalog } from './seed';
 import type { SqlDatabase } from './sqlDatabase';
 
@@ -18,6 +20,8 @@ import type { SqlDatabase } from './sqlDatabase';
 export interface DatabaseHandle {
   db: SqlDatabase;
   repositories: RepositoryBundle;
+  /** Runs a multi-write command as one transaction. See `unitOfWork.ts`. */
+  unitOfWork: UnitOfWork;
   schemaVersion: number;
 }
 
@@ -40,7 +44,12 @@ export function openDatabase(): Promise<DatabaseHandle> {
     const schemaVersion = await migrate(db);
     await seedCatalog(db, new Date().toISOString());
 
-    handle = { db, repositories: createRepositories(db), schemaVersion };
+    handle = {
+      db,
+      repositories: createRepositories(db),
+      unitOfWork: createUnitOfWork(db),
+      schemaVersion,
+    };
     return handle;
   })();
 

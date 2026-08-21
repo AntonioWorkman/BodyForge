@@ -45,3 +45,4 @@ yarn-error.*
 
 # Local dev server output
 *.log
+dist-ci/

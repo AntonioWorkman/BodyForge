@@ -18,6 +18,7 @@ function node(variationId: string, status: ProgressionStatus): ProgressionNode {
     masteredAt: null,
     unlockedAt: null,
     phaseGated: false,
+    progressionAwaitingPhase: null,
   };
 }
 

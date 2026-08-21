@@ -16,6 +16,7 @@ import {
   Text,
 } from '@/components';
 import { colors, layout, spacing } from '@/design';
+import { findIncompleteExercises } from '@/domain/mastery';
 import { formatRange } from '@/domain/format';
 import type { ExercisePerformanceWithSets } from '@/domain/types';
 import { timing } from '@/motion';
@@ -176,6 +177,28 @@ export function MainQuestScreen() {
     const isLastExercise = position >= session.performances.length - 1;
 
     if (isLastExercise) {
+      // Reaching the last exercise is not the same as finishing the quest: the
+      // player can jump around, so anything still owing sets is checked here
+      // before moving on. The service refuses an incomplete session anyway —
+      // this is so they are told what remains rather than shown an error.
+      const remaining = findIncompleteExercises(session.performances);
+      if (remaining.length > 0) {
+        const next = remaining[0]!;
+        fireHaptic('warning');
+        setPosition(next.position);
+        setPhase('logging');
+        Alert.alert(
+          'Sets still remaining',
+          `${next.variationName} has ${next.setsCompleted} of ${next.setsPrescribed} sets recorded.` +
+            (remaining.length > 1
+              ? `\n\n${remaining.length - 1} other ${
+                  remaining.length === 2 ? 'exercise is' : 'exercises are'
+                } also unfinished.`
+              : ''),
+        );
+        return;
+      }
+
       setPhase('finishing');
       router.replace({ pathname: '/quest/complete', params: { sessionId: session.id } });
       return;

@@ -1,5 +1,6 @@
 import type { DatabaseHandle } from '@/database/client';
 
+import { createAvatarStore } from './avatarStore';
 import { BackupService } from './backupService';
 import { MeasurementService } from './measurementService';
 import { PlayerService } from './playerService';
@@ -21,11 +22,11 @@ export interface AppServices {
 }
 
 export function createServices(handle: DatabaseHandle): AppServices {
-  const { repositories, db } = handle;
+  const { repositories, db, unitOfWork } = handle;
   return {
-    player: new PlayerService(repositories),
-    workouts: new WorkoutService(repositories),
-    progression: new ProgressionService(repositories),
+    player: new PlayerService(repositories, createAvatarStore()),
+    workouts: new WorkoutService(repositories, unitOfWork),
+    progression: new ProgressionService(repositories, unitOfWork),
     measurements: new MeasurementService(repositories),
     backup: new BackupService(repositories, db),
   };
@@ -43,6 +44,8 @@ export type {
 } from './progressionService';
 export { MeasurementService } from './measurementService';
 export { BackupService } from './backupService';
+export { createAvatarStore } from './avatarStore';
+export type { AvatarStore } from './avatarStore';
 export { validateBackup } from './backupSchema';
 export type { Backup, BackupValidationResult } from './backupSchema';
 export { createId } from './ids';

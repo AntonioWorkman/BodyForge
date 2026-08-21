@@ -1,5 +1,12 @@
 import type { ActiveSessionUiState, RepositoryBundle } from '@/database/repositories/interfaces';
-import { MASTERY_RULES, countQualifyingSessions, isQualifyingPerformance } from '@/domain/mastery';
+import type { UnitOfWork } from '@/database/unitOfWork';
+import { WorkoutIncompleteError } from '@/domain/errors';
+import {
+  MASTERY_RULES,
+  countQualifyingSessions,
+  findIncompleteExercises,
+  isQualifyingPerformance,
+} from '@/domain/mastery';
 import { countImprovements, findNewPersonalBests } from '@/domain/personalBests';
 import { phaseForSessionCount } from '@/domain/phases';
 import { advanceRotation, templateForRotation } from '@/domain/schedule';
@@ -47,7 +54,10 @@ export interface QuestCompleteSummary {
 }
 
 export class WorkoutService {
-  constructor(private readonly repositories: RepositoryBundle) {}
+  constructor(
+    private readonly repositories: RepositoryBundle,
+    private readonly unitOfWork: UnitOfWork,
+  ) {}
 
   /** The plan the player would start next, built from the live templates. */
   async getNextPlan(): Promise<WorkoutPlan | null> {
@@ -253,11 +263,37 @@ export class WorkoutService {
    * as progressing — the player confirms that separately, and the bonus is paid
    * at confirmation so it cannot be earned twice.
    */
+  /**
+   * Completes the active session: awards XP, records personal bests, updates
+   * mastery counts, and advances the workout rotation.
+   *
+   * Two rules govern this command.
+   *
+   * **It is refused unless the quest is actually finished.** Completing a
+   * session with sets outstanding would award quest XP and move rotation,
+   * phase and Core progression on training that never happened — and the UI's
+   * navigation is not the place to enforce that, since a caller can reach this
+   * directly. Nothing is mutated when it is refused.
+   *
+   * **Every write happens in one transaction.** Marking the session complete,
+   * awarding XP, advancing the rotation and refreshing mastery are one logical
+   * act; a failure partway through used to leave the session permanently
+   * completed with the rest stale, and unretryable.
+   *
+   * Progression bonuses are not awarded here. Becoming eligible is not the same
+   * as progressing — the player confirms that separately, and the bonus is paid
+   * at confirmation so it cannot be earned twice.
+   */
   async completeSession(sessionId: string, now = new Date()): Promise<QuestCompleteSummary> {
     const session = await this.repositories.sessions.findById(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
     if (session.status === 'completed') {
       throw new Error('Session has already been completed');
+    }
+
+    const incomplete = findIncompleteExercises(session.performances);
+    if (incomplete.length > 0 || session.performances.length === 0) {
+      throw new WorkoutIncompleteError(incomplete);
     }
 
     const [profile, priorSessions, templates] = await Promise.all([
@@ -292,23 +328,28 @@ export class WorkoutService {
 
     const sessionNumber = priorSessions.length + 1;
 
-    await this.repositories.sessions.complete({
-      sessionId,
-      completedAt,
-      durationSeconds,
-      xpAwarded: xp.total,
-      sessionNumber,
-    });
+    const { totalXpAfter, progressionsAvailable } = await this.unitOfWork.run(async (repos) => {
+      await repos.sessions.complete({
+        sessionId,
+        completedAt,
+        durationSeconds,
+        xpAwarded: xp.total,
+        sessionNumber,
+      });
 
-    const totalXpAfter = await this.repositories.player.addXp(xp.total);
-    await this.repositories.player.update({
-      nextTemplateRotationOrder: advanceRotation(
-        profile.nextTemplateRotationOrder,
-        Math.max(1, templates.length),
-      ),
-    });
+      const xpAfter = await repos.player.addXp(xp.total);
 
-    const progressionsAvailable = await this.refreshMasteryCounts(session.performances);
+      await repos.player.update({
+        nextTemplateRotationOrder: advanceRotation(
+          profile.nextTemplateRotationOrder,
+          Math.max(1, templates.length),
+        ),
+      });
+
+      const available = await this.refreshMasteryCounts(repos, session.performances);
+
+      return { totalXpAfter: xpAfter, progressionsAvailable: available };
+    });
 
     return {
       session: { ...finished, xpAwarded: xp.total, sessionNumber },
@@ -334,6 +375,7 @@ export class WorkoutService {
    * consistent with what is actually stored.
    */
   private async refreshMasteryCounts(
+    repos: RepositoryBundle,
     performances: readonly ExercisePerformanceWithSets[],
   ): Promise<{ variationId: string; variationName: string }[]> {
     const newlyEligible: { variationId: string; variationName: string }[] = [];
@@ -343,20 +385,15 @@ export class WorkoutService {
       if (seen.has(performance.variationId)) continue;
       seen.add(performance.variationId);
 
-      const history = await this.repositories.sessions.listPerformancesForVariation(
-        performance.variationId,
-      );
+      const history = await repos.sessions.listPerformancesForVariation(performance.variationId);
       const qualifying = countQualifyingSessions(history);
 
-      const state = await this.repositories.progression.get(performance.variationId);
+      const state = await repos.progression.get(performance.variationId);
       if (!state) continue;
 
       const required = MASTERY_RULES.qualifyingSessionsRequired;
       const wasEligible = state.qualifyingSessions >= required;
-      await this.repositories.progression.setQualifyingSessions(
-        performance.variationId,
-        qualifying,
-      );
+      await repos.progression.setQualifyingSessions(performance.variationId, qualifying);
 
       if (
         !wasEligible &&
