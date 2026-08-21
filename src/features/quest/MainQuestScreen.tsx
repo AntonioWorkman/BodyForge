@@ -365,7 +365,7 @@ export function MainQuestScreen() {
             tone="muted"
           />
           <Text variant="caption" color="textMuted">
-            Swipe or use the arrows to move between exercises
+            Swipe to change exercise
           </Text>
           <IconButton
             name="chevron-right"

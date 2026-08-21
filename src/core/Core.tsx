@@ -209,19 +209,30 @@ export function Core({
           <Group transform={bodyTransform}>
             {/* Rim: the lavender edge illumination that reads as depth. */}
             {outerPath ? (
-              <Path path={outerPath} style="stroke" strokeWidth={1.6} strokeJoin="round">
+              <Path path={outerPath} style="stroke" strokeWidth={2.4} strokeJoin="round">
                 <SweepGradient
                   c={vec(cx, cy)}
                   colors={[
-                    withAlpha(palette.spectralLavender, rim),
-                    withAlpha(palette.royalViolet, rim * 0.35),
-                    withAlpha(palette.spectralLavender, rim * 0.9),
-                    withAlpha(palette.royalViolet, rim * 0.3),
-                    withAlpha(palette.spectralLavender, rim),
+                    withAlpha(palette.spectralLavender, rim * 0.7),
+                    withAlpha(palette.royalViolet, rim * 0.25),
+                    withAlpha(palette.spectralLavender, rim * 0.6),
+                    withAlpha(palette.royalViolet, rim * 0.2),
+                    withAlpha(palette.spectralLavender, rim * 0.7),
                   ]}
                 />
-                <BlurMask blur={2.5} style="solid" />
+                <BlurMask blur={5} style="normal" />
               </Path>
+            ) : null}
+
+            {/* The hard facet edge, drawn over the bloom. */}
+            {outerPath ? (
+              <Path
+                path={outerPath}
+                style="stroke"
+                strokeWidth={1}
+                strokeJoin="round"
+                color={withAlpha(palette.spectralLavender, 0.35 + rim * 0.45)}
+              />
             ) : null}
 
             {/* Internal energy, contained inside the silhouette. */}
@@ -252,13 +263,22 @@ export function Core({
 
             {/* The obsidian body: the dark centre the energy sits behind. */}
             {innerPath ? (
-              <Path path={innerPath} style="fill">
-                <RadialGradient
-                  c={vec(cx - radius * 0.2, cy - radius * 0.28)}
-                  r={radius}
-                  colors={[withAlpha('#241634', 0.96), withAlpha('#05040A', 1)]}
+              <>
+                <Path path={innerPath} style="fill">
+                  <RadialGradient
+                    c={vec(cx - radius * 0.2, cy - radius * 0.28)}
+                    r={radius}
+                    colors={[withAlpha('#241634', 0.96), withAlpha('#05040A', 1)]}
+                  />
+                </Path>
+                <Path
+                  path={innerPath}
+                  style="stroke"
+                  strokeWidth={1}
+                  strokeJoin="round"
+                  color={withAlpha(palette.spectralLavender, 0.18 + rim * 0.3)}
                 />
-              </Path>
+              </>
             ) : null}
 
             {/* A single specular highlight — the one place the Core catches light. */}

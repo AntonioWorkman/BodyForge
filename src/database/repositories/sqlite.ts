@@ -379,6 +379,43 @@ class SqliteSessionRepository implements SessionRepository {
     }));
   }
 
+  async listCompletedPerformancesByVariation(): Promise<
+    Map<string, ExercisePerformanceWithSets[]>
+  > {
+    const rows = await this.db.getAllAsync<PerformanceRow>(
+      `SELECT p.* FROM exercise_performance p
+         JOIN workout_session s ON s.id = p.session_id
+        WHERE s.status = 'completed'
+        ORDER BY s.completed_at DESC, p.position ASC`,
+    );
+
+    const grouped = new Map<string, ExercisePerformanceWithSets[]>();
+    if (rows.length === 0) return grouped;
+
+    const setRows = await this.db.getAllAsync<SetRow>(
+      'SELECT * FROM set_performance ORDER BY set_number',
+    );
+
+    const setsByPerformance = new Map<string, SetPerformance[]>();
+    for (const row of setRows) {
+      const list = setsByPerformance.get(row.performance_id) ?? [];
+      list.push(toSet(row));
+      setsByPerformance.set(row.performance_id, list);
+    }
+
+    for (const row of rows) {
+      const performance: ExercisePerformanceWithSets = {
+        ...toPerformance(row),
+        sets: setsByPerformance.get(row.id) ?? [],
+      };
+      const list = grouped.get(row.variation_id) ?? [];
+      list.push(performance);
+      grouped.set(row.variation_id, list);
+    }
+
+    return grouped;
+  }
+
   async recordSet(input: RecordSetInput): Promise<SetPerformance> {
     const id = `${input.performanceId}-s${input.setNumber}`;
     await this.db.runAsync(

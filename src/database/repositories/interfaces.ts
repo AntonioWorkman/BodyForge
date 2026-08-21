@@ -86,6 +86,11 @@ export interface SessionRepository {
   countCompleted(): Promise<number>;
   /** Recorded performances of one variation, newest session first. */
   listPerformancesForVariation(variationId: string): Promise<ExercisePerformanceWithSets[]>;
+  /**
+   * Every completed performance, grouped by variation, newest session first
+   * within each group. One round trip instead of one per variation.
+   */
+  listCompletedPerformancesByVariation(): Promise<Map<string, ExercisePerformanceWithSets[]>>;
   recordSet(input: RecordSetInput): Promise<SetPerformance>;
   removeSet(performanceId: string, setNumber: number): Promise<void>;
   markPerformanceCompleted(performanceId: string, completedAt: string | null): Promise<void>;

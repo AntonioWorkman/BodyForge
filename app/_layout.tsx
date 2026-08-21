@@ -26,7 +26,6 @@ void SystemUI.setBackgroundColorAsync(colors.background);
 export default function RootLayout() {
   const { loaded: fontsLoaded, error: fontError } = useAppFonts();
   const [servicesReady, setServicesReady] = useState(false);
-
   const ready = (fontsLoaded || fontError !== null) && servicesReady;
 
   useEffect(() => {

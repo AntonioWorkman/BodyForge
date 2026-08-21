@@ -288,12 +288,14 @@ const styles = StyleSheet.create({
   measureInputRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
+    justifyContent: 'space-between',
     gap: spacing.sm,
     borderBottomWidth: layout.hairline,
     borderColor: colors.border,
   },
   measureInput: {
-    flex: 1,
+    flexShrink: 1,
+    minWidth: 60,
     color: colors.text,
     fontFamily: 'SpaceGrotesk_500Medium',
     fontSize: 24,

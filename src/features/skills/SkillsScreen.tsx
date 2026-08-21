@@ -48,12 +48,19 @@ export function SkillsScreen() {
   // Discrete zoom rather than pinch: pinch nested inside two scroll views is
   // unreliable, and a visible control is reachable without a gesture at all.
   const [zoom, setZoom] = useState<Zoom>('detail');
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const horizontal = useRef<ScrollView>(null);
   const vertical = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
-    setChains(await services.progression.getChains());
+    try {
+      setChains(await services.progression.getChains());
+      setLoadFailed(false);
+    } catch {
+      // Kept distinct from "this phase is empty", which is a valid state.
+      setLoadFailed(true);
+    }
     await refresh();
   }, [refresh, services]);
 
@@ -121,48 +128,49 @@ export function SkillsScreen() {
   return (
     <Screen padded={false} tabBarInset testID="skills-screen">
       <View style={styles.header}>
-        <Text variant="systemLabel" color="highlight" uppercase>
-          Skills
-        </Text>
+        <View style={styles.headerRow}>
+          <Text variant="systemLabel" color="highlight" uppercase>
+            Skills
+          </Text>
+          <PhaseChip
+            label={zoom === 'detail' ? 'Fit' : 'Detail'}
+            active={false}
+            onPress={() => setZoom(zoom === 'detail' ? 'overview' : 'detail')}
+          />
+        </View>
         <Text variant="body" color="textSecondary">
           Your movement progressions. Harder variations unlock when you confirm you can meet their
           technique standard.
         </Text>
       </View>
 
-      <View style={styles.controls}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterScroll}
-          contentContainerStyle={styles.filters}
-        >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        // Without this the row is compressed by the tree below it, which takes
+        // the remaining height.
+        style={styles.filterBar}
+        contentContainerStyle={styles.filters}
+      >
+        <PhaseChip label="All" active={phaseFilter === null} onPress={() => setPhaseFilter(null)} />
+        {PHASES.map((phase) => (
           <PhaseChip
-            label="All"
-            active={phaseFilter === null}
-            onPress={() => setPhaseFilter(null)}
+            key={phase.id}
+            label={phase.name}
+            active={phaseFilter === phase.id}
+            onPress={() => setPhaseFilter(phase.id)}
           />
-          {PHASES.map((phase) => (
-            <PhaseChip
-              key={phase.id}
-              label={phase.name}
-              active={phaseFilter === phase.id}
-              onPress={() => setPhaseFilter(phase.id)}
-            />
-          ))}
-        </ScrollView>
-
-        <PhaseChip
-          label={zoom === 'detail' ? 'Fit' : 'Detail'}
-          active={false}
-          onPress={() => setZoom(zoom === 'detail' ? 'overview' : 'detail')}
-        />
-      </View>
+        ))}
+      </ScrollView>
 
       {layout_.nodes.length === 0 ? (
         <EmptyState
-          title="Nothing in this phase"
-          message="No variations are introduced in this phase. Select another filter to see your progressions."
+          title={loadFailed ? 'Could not load skills' : 'Nothing in this phase'}
+          message={
+            loadFailed
+              ? 'Your movement chains could not be read. Reopen this tab to try again.'
+              : 'No variations are introduced in this phase. Select another filter to see your progressions.'
+          }
         />
       ) : (
         <ScrollView ref={vertical} showsVerticalScrollIndicator={false}>
@@ -360,15 +368,13 @@ function NodeSheet({
 
 const styles = StyleSheet.create({
   header: { paddingHorizontal: layout.screenPadding, gap: spacing.sm },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: layout.screenPadding,
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  filterBar: { flexGrow: 0, flexShrink: 0 },
+  filters: {
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: spacing.lg,
     gap: spacing.sm,
   },
-  filterScroll: { flex: 1 },
-  filters: { paddingHorizontal: layout.screenPadding, gap: spacing.sm },
   overview: {
     transform: [{ scale: ZOOM_SCALE.overview }],
     transformOrigin: 'top left',

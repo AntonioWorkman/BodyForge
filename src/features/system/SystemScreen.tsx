@@ -25,7 +25,7 @@ export function SystemScreen() {
   const { player, directive, loading, refresh } = useSystemScreen();
   const router = useRouter();
   const reducedMotion = useReducedMotion();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [coreTaps, setCoreTaps] = useState(0);
 
   useFocusEffect(
@@ -52,7 +52,9 @@ export function SystemScreen() {
       ? FadeIn.duration(timing.micro)
       : FadeInDown.duration(timing.transition).delay(index * stagger.tight);
 
-  const coreSize = Math.min(width - layout.screenPadding * 2, 340);
+  // Bounded by height as well as width so the directive and its call to action
+  // stay above the fold on shorter phones.
+  const coreSize = Math.min(width - layout.screenPadding * 2, height * 0.3, 300);
   const isNewPlayer = player.completedSessions === 0;
 
   return (
@@ -204,14 +206,9 @@ function DirectiveBlock({
       </Text>
 
       {directive.kind === 'recovery' ? (
-        <View style={styles.recovery}>
-          <Text variant="overline" color="highlight" uppercase>
-            Recovery recommended
-          </Text>
-          <Text variant="caption" color="textSecondary">
-            {directive.suggestion}
-          </Text>
-        </View>
+        <Text variant="caption" color="highlight" style={styles.recovery}>
+          Recovery recommended · {directive.suggestion}
+        </Text>
       ) : null}
 
       <Button
@@ -243,18 +240,11 @@ const styles = StyleSheet.create({
   avatarImage: { width: '100%', height: '100%' },
   xp: { marginTop: spacing.xl, gap: spacing.sm },
   xpRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  core: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.sm },
+  core: { alignItems: 'center', marginTop: spacing.md, gap: spacing.xs },
   coreNote: { maxWidth: 280, marginTop: spacing.xxs },
-  directive: { marginTop: spacing.xxl, gap: spacing.lg },
+  directive: { marginTop: spacing.xl, gap: spacing.md },
   directiveBody: { gap: spacing.xs },
-  recovery: {
-    marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: layout.hairline,
-    borderColor: colors.border,
-    gap: spacing.xxs,
-  },
+  recovery: { marginTop: spacing.sm },
   cta: { marginTop: spacing.lg },
   week: { marginTop: spacing.xxxl, gap: spacing.md },
 });

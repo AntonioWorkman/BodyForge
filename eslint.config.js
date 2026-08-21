@@ -24,11 +24,28 @@ module.exports = [
     },
   },
   {
-    // Jest config files run in Node with Jest's globals available.
-    files: ['jest.setup.js', 'jest.config.js', 'babel.config.js', 'eslint.config.js'],
+    // Node-side config and tooling files, which run outside the app bundle.
+    files: [
+      'jest.setup.js',
+      'jest.config.js',
+      'babel.config.js',
+      'eslint.config.js',
+      'metro.config.js',
+      'index.js',
+      'scripts/**/*.js',
+    ],
     languageOptions: {
-      globals: { global: 'writable', jest: 'readonly', require: 'readonly', module: 'writable' },
+      globals: {
+        global: 'writable',
+        jest: 'readonly',
+        require: 'readonly',
+        module: 'writable',
+        __dirname: 'readonly',
+        process: 'readonly',
+        console: 'readonly',
+      },
     },
+    rules: { 'no-console': 'off' },
   },
   {
     // Reanimated shared values are mutable handles by design: `value.value = x`

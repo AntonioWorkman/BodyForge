@@ -59,11 +59,14 @@ export class ProgressionService {
 
   /** The whole tree, ready for the Skills screen to lay out. */
   async getChains(): Promise<ProgressionChainView[]> {
-    const [chains, variations, states, completedCount] = await Promise.all([
+    const [chains, variations, states, completedCount, historyByVariation] = await Promise.all([
       this.repositories.catalog.listChains(),
       this.repositories.catalog.listVariations(),
       this.repositories.progression.list(),
       this.repositories.sessions.countCompleted(),
+      // Fetched once for the whole tree; querying per variation turned this
+      // into forty round trips and left the screen empty for seconds.
+      this.repositories.sessions.listCompletedPerformancesByVariation(),
     ]);
 
     const currentPhase = phaseForSessionCount(completedCount);
@@ -86,7 +89,7 @@ export class ProgressionService {
       const nodes: ProgressionNode[] = [];
       for (const variation of chainVariations) {
         const state = stateByVariation.get(variation.id) ?? fallbackState(variation.id);
-        const history = await this.repositories.sessions.listPerformancesForVariation(variation.id);
+        const history = historyByVariation.get(variation.id) ?? [];
 
         let best: number | null = null;
         for (const performance of history) {

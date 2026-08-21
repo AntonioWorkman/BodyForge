@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Copied from node_modules by scripts/prepare-web-assets.js
+/public/canvaskit.wasm
+
+# Local dev server output
+*.log

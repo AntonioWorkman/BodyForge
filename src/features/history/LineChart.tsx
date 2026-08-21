@@ -120,6 +120,29 @@ export function LineChart({
     );
   }
 
+  // A single record is a value, not a trend. Showing it as a lone dot in a
+  // full-height plot reads as a broken chart, so it is stated plainly instead.
+  if (series.points.length === 1) {
+    const only = series.points[0]!;
+    return (
+      <View style={styles.single} testID={testID}>
+        <Text variant="numeric" tabular>
+          {formatValue(only.value)}
+          <Text variant="bodyLarge" color="textMuted">
+            {' '}
+            {unit}
+          </Text>
+        </Text>
+        <Text variant="caption" color="textMuted">
+          {formatDate(only.t)} · one record so far
+        </Text>
+        <Text variant="caption" color="textMuted">
+          Log another to see a trend.
+        </Text>
+      </View>
+    );
+  }
+
   const readout = selected ?? series.last;
 
   return (
@@ -214,6 +237,12 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
     borderRadius: 10,
     borderStyle: 'dashed',
+  },
+  single: {
+    gap: spacing.xxs,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: layout.hairline,
+    borderBottomColor: colors.borderSubtle,
   },
   readout: { gap: spacing.xxs, marginBottom: spacing.sm },
   axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs },

@@ -191,6 +191,49 @@ describe('workout persistence', () => {
     expect(stored!.performances[0]!.variationName).toBe('Bulgarian Split Squat');
   });
 
+  it('groups every completed performance by variation in one pass', async () => {
+    await completeSession(harness, new Date('2026-08-02T10:00:00.000Z'), () => 9);
+    await completeSession(harness, new Date('2026-08-04T10:00:00.000Z'), () => 10);
+
+    const grouped = await harness.repositories.sessions.listCompletedPerformancesByVariation();
+
+    // Bulgarian Split Squat is prescribed in both workouts, so it has two.
+    expect(grouped.get('var-bss-standard')).toHaveLength(2);
+    // Push-ups appear in Workout A only.
+    expect(grouped.get('var-push-up-regular')).toHaveLength(1);
+    // Nothing untrained appears at all.
+    expect(grouped.get('var-push-up-slow')).toBeUndefined();
+
+    for (const performances of grouped.values()) {
+      for (const performance of performances) {
+        expect(performance.sets.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('matches the per-variation query it replaces', async () => {
+    await completeSession(harness, new Date('2026-08-02T10:00:00.000Z'), () => 9);
+    await completeSession(harness, new Date('2026-08-04T10:00:00.000Z'), () => 11);
+
+    const grouped = await harness.repositories.sessions.listCompletedPerformancesByVariation();
+    const individually =
+      await harness.repositories.sessions.listPerformancesForVariation('var-bss-standard');
+
+    expect(grouped.get('var-bss-standard')).toEqual(individually);
+  });
+
+  it('excludes performances from sessions that were never completed', async () => {
+    const plan = await harness.workouts.getNextPlan();
+    const session = await harness.workouts.startSession(
+      plan!,
+      new Date('2026-08-02T10:00:00.000Z'),
+    );
+    await harness.workouts.recordSet(session.performances[0]!.id, 1, 9, 9);
+
+    const grouped = await harness.repositories.sessions.listCompletedPerformancesByVariation();
+    expect(grouped.size).toBe(0);
+  });
+
   it('awards XP once and keeps the level derived from the same total', async () => {
     const summary = await completeSession(harness, new Date('2026-08-02T10:00:00.000Z'), () => 9);
     expect(summary.xp.total).toBe(345);

@@ -42,21 +42,30 @@ export function HistoryScreen() {
   const [logType, setLogType] = useState<MeasurementType | null>(null);
   const [inspecting, setInspecting] = useState<{ title: string; body: string } | null>(null);
 
-  const load = useCallback(async () => {
-    const [allMeasurements, allSessions, allChains] = await Promise.all([
-      services.measurements.list(),
-      services.workouts.listCompletedSessions(),
-      services.progression.getChains(),
-    ]);
-    setMeasurements(allMeasurements);
-    setSessions(allSessions);
-    setChains(allChains);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-    if (!variationId) {
-      const trained = allChains
-        .flatMap((chain) => chain.nodes)
-        .find((node) => node.sessionsRecorded > 0);
-      if (trained) setVariationId(trained.variation.id);
+  const load = useCallback(async () => {
+    try {
+      const [allMeasurements, allSessions, allChains] = await Promise.all([
+        services.measurements.list(),
+        services.workouts.listCompletedSessions(),
+        services.progression.getChains(),
+      ]);
+      setMeasurements(allMeasurements);
+      setSessions(allSessions);
+      setChains(allChains);
+      setLoadError(null);
+
+      if (!variationId) {
+        const trained = allChains
+          .flatMap((chain) => chain.nodes)
+          .find((node) => node.sessionsRecorded > 0);
+        if (trained) setVariationId(trained.variation.id);
+      }
+    } catch {
+      // Surfaced rather than swallowed: an empty screen would otherwise be
+      // indistinguishable from a player who has recorded nothing.
+      setLoadError('Your records could not be read. Reopen this tab to try again.');
     }
   }, [services, variationId]);
 
@@ -192,7 +201,9 @@ export function HistoryScreen() {
         ))}
       </ScrollView>
 
-      {!hasAnything ? (
+      {loadError ? (
+        <EmptyState title="Could not load history" message={loadError} />
+      ) : !hasAnything ? (
         <EmptyState
           title="No records yet"
           message="Complete a quest or log a measurement, and your trends will appear here."
