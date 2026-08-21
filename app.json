@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "BodyForge",
+    "slug": "bodyforge",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "bodyforge",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#08060D",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#08060D"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bodyforge.app"
+    },
+    "android": {
+      "package": "com.bodyforge.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#08060D",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-font",
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BodyForge uses your photo library only to set a local player avatar. The image never leaves your device."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
