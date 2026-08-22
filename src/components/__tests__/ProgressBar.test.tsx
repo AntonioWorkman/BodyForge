@@ -1,87 +1,186 @@
+import { Animated } from 'react-native';
 import { render } from '@testing-library/react-native';
 
-import { ProgressBar } from '../ProgressBar';
+import { ProgressBar, clampProgress } from '../ProgressBar';
+import { timing } from '@/motion';
 
 /**
- * ProgressBar renders its fill on the React render path.
+ * The progress bar animates its fill natively.
  *
- * These assert what the component puts on screen — a width and an
- * accessibility value — rather than how it arrives there, so they stay
- * meaningful if the fill is ever animated again by some other mechanism.
+ * Two things are worth guarding and neither is observable the same way:
+ *
+ * - The *value* it reports. Clamping and `accessibilityValue` are plain render
+ *   output and are asserted directly.
+ * - The *animation* it starts. `useNativeDriver` hands the animation to the
+ *   platform, so in Jest the JS-side value never advances — the end state
+ *   cannot be read back off the rendered style. What can be checked, and what
+ *   actually matters, is the animation this component asks for: the right
+ *   target, the right duration, and natively driven so no JavaScript runs on
+ *   the display-link frames where the iOS crash aborted.
  */
 describe('ProgressBar', () => {
-  const widthOf = (element: { props: { style?: unknown } }): unknown => {
-    const flat = ([] as unknown[]).concat(element.props.style ?? []);
-    for (let i = flat.length - 1; i >= 0; i -= 1) {
-      const entry = flat[i] as { width?: unknown } | null;
-      if (entry && typeof entry === 'object' && 'width' in entry) return entry.width;
-    }
-    return undefined;
+  const styleOf = (element: { props: { style?: unknown } }): Record<string, any> => {
+    const flat = ([] as any[]).concat(element.props.style ?? []);
+    return Object.assign({}, ...flat.filter(Boolean));
   };
 
-  /** The fill is the track's only child. */
-  const fillOf = async (progress: number) => {
-    const screen = await render(<ProgressBar progress={progress} testID="bar" />);
-    const track = screen.getByTestId('bar');
-    const children = track.children.filter((c): c is typeof track => typeof c !== 'string');
-    return { screen, track, fill: children[0]! };
-  };
+  const scaleOf = (element: { props: { style?: unknown } }) =>
+    styleOf(element).transform?.[0]?.scaleX;
 
-  it.each([
-    [0, '0%'],
-    [0.25, '25%'],
-    [0.5, '50%'],
-    [1, '100%'],
-  ])('renders progress %p as a %s wide fill', async (progress, expected) => {
-    const { fill } = await fillOf(progress);
-    expect(widthOf(fill)).toBe(expected);
-  });
+  describe('clampProgress', () => {
+    it.each([
+      [0, 0],
+      [0.5, 0.5],
+      [1, 1],
+      [-1, 0],
+      [2, 1],
+      [-0.0001, 0],
+      [1.0001, 1],
+    ])('clamps %p to %p', (input, expected) => {
+      expect(clampProgress(input)).toBe(expected);
+    });
 
-  it.each([
-    [-1, '0%'],
-    [2, '100%'],
-    [Number.NaN, '0%'],
-    // Non-finite is treated as "no progress", not as a huge one.
-    [Number.POSITIVE_INFINITY, '0%'],
-    [Number.NEGATIVE_INFINITY, '0%'],
-  ])('clamps out-of-range progress %p to %s', async (progress, expected) => {
-    const { fill } = await fillOf(progress);
-    expect(widthOf(fill)).toBe(expected);
-  });
-
-  it('reports progress to assistive technology as a rounded percentage', async () => {
-    const screen = await render(
-      <ProgressBar progress={0.427} testID="bar" accessibilityLabel="Level progress" />,
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+      'treats the non-finite value %p as no progress',
+      (input) => {
+        expect(clampProgress(input)).toBe(0);
+      },
     );
-    const track = screen.getByTestId('bar');
-
-    expect(track.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 43 });
-    expect(track.props.accessibilityLabel).toBe('Level progress');
-    expect(track.props.accessibilityRole).toBe('progressbar');
   });
 
-  it('clamps the accessibility value too, so it can never exceed 100', async () => {
-    const screen = await render(<ProgressBar progress={5} testID="bar" />);
-    expect(screen.getByTestId('bar').props.accessibilityValue.now).toBe(100);
-  });
-
-  it('reflects a progress change on re-render', async () => {
-    const screen = await render(<ProgressBar progress={0.2} testID="bar" />);
-    const readWidth = () => {
+  describe('reported value', () => {
+    it('reports progress to assistive technology as a rounded percentage', async () => {
+      const screen = await render(
+        <ProgressBar progress={0.427} testID="bar" accessibilityLabel="Level progress" />,
+      );
       const track = screen.getByTestId('bar');
-      const child = track.children.find((c): c is typeof track => typeof c !== 'string')!;
-      return widthOf(child);
-    };
 
-    expect(readWidth()).toBe('20%');
-    await screen.rerender(<ProgressBar progress={0.8} testID="bar" />);
-    expect(readWidth()).toBe('80%');
-    expect(screen.getByTestId('bar').props.accessibilityValue.now).toBe(80);
+      expect(track.props.accessibilityRole).toBe('progressbar');
+      expect(track.props.accessibilityLabel).toBe('Level progress');
+      expect(track.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 43 });
+    });
+
+    it.each([
+      [-1, 0],
+      [2, 100],
+      [Number.NaN, 0],
+    ])('clamps the reported value for out-of-range progress %p', async (progress, now) => {
+      const screen = await render(<ProgressBar progress={progress} testID="bar" />);
+      expect(screen.getByTestId('bar').props.accessibilityValue.now).toBe(now);
+    });
+
+    it('stays truthful even though the animation is native', async () => {
+      // The animated value is a presentation detail the platform owns. What the
+      // component *reports* is derived from the prop every render, so it is
+      // right even if an animation is interrupted or never runs at all.
+      const screen = await render(<ProgressBar progress={0.2} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.75} testID="bar" />);
+
+      expect(screen.getByTestId('bar').props.accessibilityValue.now).toBe(75);
+    });
   });
 
-  it('honours height and tone without losing the fill', async () => {
-    const { fill, track } = await fillOf(0.5);
-    expect(widthOf(fill)).toBe('50%');
-    expect(track.props.style).toBeTruthy();
+  describe('fill geometry', () => {
+    it('mounts already at its value rather than sweeping up from zero', async () => {
+      const screen = await render(<ProgressBar progress={0.6} testID="bar" />);
+      expect(scaleOf(screen.getByTestId('bar-fill'))).toBe(0.6);
+    });
+
+    it.each([0, 0.25, 1])('mounts at %p exactly', async (progress) => {
+      const screen = await render(<ProgressBar progress={progress} testID="bar" />);
+      expect(scaleOf(screen.getByTestId('bar-fill'))).toBe(progress);
+    });
+
+    it('mounts a clamped value, never one out of range', async () => {
+      const screen = await render(<ProgressBar progress={4} testID="bar" />);
+      expect(scaleOf(screen.getByTestId('bar-fill'))).toBe(1);
+    });
+
+    /**
+     * The fill grows left to right, not outward from the middle.
+     *
+     * `scaleX` scales about an element's centre, so a fill laid out to exactly
+     * cover the track would expand from the centre — a visibly wrong progress
+     * bar. Double width offset by one full width puts the centre on the track's
+     * left edge instead. This asserts that geometry because losing it is silent:
+     * the bar still animates, it just grows the wrong way.
+     */
+    it('anchors the fill so it grows from the left edge', async () => {
+      const screen = await render(<ProgressBar progress={0.5} testID="bar" />);
+      const fill = styleOf(screen.getByTestId('bar-fill'));
+
+      expect(fill.position).toBe('absolute');
+      expect(fill.left).toBe('-100%');
+      expect(fill.width).toBe('200%');
+    });
+
+    it('clips the overflowing half inside the track', async () => {
+      const screen = await render(<ProgressBar progress={0.5} testID="bar" />);
+      expect(styleOf(screen.getByTestId('bar')).overflow).toBe('hidden');
+    });
+  });
+
+  describe('the animation it starts', () => {
+    let spy: jest.SpyInstance;
+
+    beforeEach(() => {
+      spy = jest.spyOn(Animated, 'timing');
+    });
+    afterEach(() => spy.mockRestore());
+
+    const lastConfig = () => spy.mock.calls[spy.mock.calls.length - 1]?.[1] as any;
+
+    it('does not animate on mount', async () => {
+      await render(<ProgressBar progress={0.3} testID="bar" />);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('animates to the new value when progress changes', async () => {
+      const screen = await render(<ProgressBar progress={0.2} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.85} testID="bar" />);
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(lastConfig().toValue).toBe(0.85);
+    });
+
+    it('animates to a clamped target', async () => {
+      const screen = await render(<ProgressBar progress={0.2} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={9} testID="bar" />);
+
+      expect(lastConfig().toValue).toBe(1);
+    });
+
+    it('drives the animation natively, so no JS runs per frame', async () => {
+      const screen = await render(<ProgressBar progress={0.2} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.6} testID="bar" />);
+
+      expect(lastConfig().useNativeDriver).toBe(true);
+    });
+
+    it('uses a restrained transition-length duration', async () => {
+      const screen = await render(<ProgressBar progress={0.2} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.6} testID="bar" />);
+
+      expect(lastConfig().duration).toBe(timing.transition);
+      expect(lastConfig().duration).toBeGreaterThanOrEqual(300);
+      expect(lastConfig().duration).toBeLessThanOrEqual(450);
+    });
+
+    it('does not restart the animation when progress is unchanged', async () => {
+      const screen = await render(<ProgressBar progress={0.4} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.4} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.4} testID="bar" />);
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('animates again on each further change', async () => {
+      const screen = await render(<ProgressBar progress={0.1} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.4} testID="bar" />);
+      await screen.rerender(<ProgressBar progress={0.9} testID="bar" />);
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(lastConfig().toValue).toBe(0.9);
+    });
   });
 });
