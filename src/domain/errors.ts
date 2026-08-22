@@ -1,0 +1,122 @@
+import type { PhaseId } from './types';
+
+/**
+ * Domain errors.
+ *
+ * These represent rules the application refuses to break, not failures. They
+ * are thrown by services so a caller — the UI, or another service — can react
+ * to the specific reason rather than parsing a message.
+ */
+
+/** One exercise that still owes sets, for telling the player what remains. */
+export interface IncompleteExercise {
+  /** Position within the session, zero-based. */
+  position: number;
+  variationName: string;
+  setsCompleted: number;
+  setsPrescribed: number;
+}
+
+/**
+ * A session cannot be completed while prescribed sets are missing. Completing
+ * it would award quest XP, advance the rotation and move phase and Core
+ * progression on work that was never done.
+ */
+export class WorkoutIncompleteError extends Error {
+  override readonly name = 'WorkoutIncompleteError';
+
+  constructor(readonly incomplete: IncompleteExercise[]) {
+    super(
+      `This quest still has ${incomplete.length} ${
+        incomplete.length === 1 ? 'exercise' : 'exercises'
+      } with sets remaining.`,
+    );
+  }
+
+  /** The exercise the player should be returned to. */
+  get firstIncompletePosition(): number {
+    return this.incomplete[0]?.position ?? 0;
+  }
+}
+
+/**
+ * The next variation is not reachable in the player's current phase. Mastery
+ * criteria may well be satisfied — this is about the training phase gate, not
+ * about performance.
+ */
+export class ProgressionPhaseLockedError extends Error {
+  override readonly name = 'ProgressionPhaseLockedError';
+
+  constructor(
+    readonly variationName: string,
+    readonly requiredPhase: PhaseId,
+    readonly currentPhase: PhaseId,
+  ) {
+    super(`${variationName} is not available until the ${requiredPhase} phase.`);
+  }
+}
+
+/** The variation has not met the criteria to be progressed past. */
+export class ProgressionNotReadyError extends Error {
+  override readonly name = 'ProgressionNotReadyError';
+
+  constructor(readonly variationId: string) {
+    super('This variation is not ready to progress.');
+  }
+}
+
+/**
+ * The session is not in a state that can be completed — already completed,
+ * abandoned, or completed by a concurrent caller between read and write.
+ */
+export class SessionNotActiveError extends Error {
+  override readonly name = 'SessionNotActiveError';
+
+  constructor(
+    readonly sessionId: string,
+    readonly status: string,
+  ) {
+    super(`This quest is no longer active (${status}).`);
+  }
+}
+
+/**
+ * A player already exists, so onboarding cannot run again.
+ *
+ * There is exactly one player per installation. Re-running onboarding would
+ * reset XP and rotation while leaving completed history in place, which is not
+ * a state the app can be in.
+ */
+export class PlayerAlreadyExistsError extends Error {
+  override readonly name = 'PlayerAlreadyExistsError';
+
+  constructor() {
+    super('A player already exists on this device.');
+  }
+}
+
+/**
+ * Durable history was reached that the portable backup format cannot describe.
+ *
+ * Export used to drop such a session and return the rest, so a player could be
+ * handed a file that reported success while silently missing quests they had
+ * actually finished — the one failure mode a backup must never have, because
+ * it is invisible until the day the backup is needed. Reaching a completed
+ * session without its completion fields means storage is in a state the app
+ * believes is impossible, and the honest response is to fail the export and
+ * say which session and why.
+ */
+export class BackupExportInvariantError extends Error {
+  override readonly name = 'BackupExportInvariantError';
+
+  constructor(
+    readonly sessionId: string,
+    readonly reasons: string[],
+  ) {
+    super(
+      `This backup was stopped because a recorded quest could not be exported ` +
+        `intact (${sessionId}: ${reasons.join('; ')}). Nothing has been saved, ` +
+        `so no history has been lost.`,
+    );
+  }
+}
