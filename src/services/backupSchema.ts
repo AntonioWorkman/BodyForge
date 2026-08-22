@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { APP_CONFIG } from '@/config/app.config';
 import { VARIATIONS_BY_ID } from '@/domain/program/catalog';
+import { isCalendarDate, isCanonicalTimestamp } from '@/domain/time';
 
 /**
  * Backup format.
@@ -13,21 +14,28 @@ import { VARIATIONS_BY_ID } from '@/domain/program/catalog';
  */
 
 /**
- * A timestamp that actually parses.
+ * A timestamp in the exact canonical form this app emits.
  *
- * A non-empty string is not enough: a malformed value carried into the app
- * becomes `NaN` in every comparison and sort it touches, silently reordering
- * history rather than failing.
+ * "Parses" is not the bar. `Date.parse` accepts `August 21, 2026` and
+ * `2026-08-21T12:34:56.789-04:00`; both name real instants, and both sort
+ * differently as text than the `Date.toISOString()` values every other row
+ * holds. Timestamps are stored as SQLite TEXT and history is ordered
+ * lexicographically, so admitting a second spelling silently reorders the
+ * player's history without any single value being wrong.
+ *
+ * Non-canonical input is rejected, never normalised into shape: this document
+ * is untrusted, and quietly rewriting it would hide what it actually said.
  */
 const isoTimestamp = z
   .string()
-  .min(1)
-  .refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a valid timestamp');
+  .refine(isCanonicalTimestamp, 'Expected a UTC timestamp like 2026-08-21T12:34:56.789Z');
 
-const isoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date')
-  .refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a real calendar date');
+/**
+ * A local calendar day. Impossible dates are rejected rather than rolled
+ * forward — `2026-02-30` is not February at all once `Date` has finished with
+ * it.
+ */
+const isoDate = z.string().refine(isCalendarDate, 'Expected a real calendar date, as YYYY-MM-DD');
 
 const prescriptionSchema = z
   .object({

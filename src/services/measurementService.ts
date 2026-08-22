@@ -1,5 +1,6 @@
 import type { RepositoryBundle } from '@/database/repositories/interfaces';
 import { todayIsoDate } from '@/domain/format';
+import { isCalendarDate } from '@/domain/time';
 import type { Measurement, MeasurementType, UnitSystem } from '@/domain/types';
 import { toStorageValue } from '@/domain/units';
 
@@ -27,11 +28,21 @@ export class MeasurementService {
       throw new Error('Measurement must be a positive number');
     }
 
+    // `recordedOn` is the one field a caller may supply, and it is written
+    // straight to a column that history and charts order lexicographically. A
+    // malformed or impossible day would sort into the wrong place forever, so
+    // it is checked here rather than trusted — the same contract backup import
+    // enforces on the way in.
+    const recordedOn = options.recordedOn ?? todayIsoDate(now);
+    if (!isCalendarDate(recordedOn)) {
+      throw new Error(`"${recordedOn}" is not a real calendar date (expected YYYY-MM-DD).`);
+    }
+
     const measurement: Measurement = {
       id: createId('meas'),
       type,
       value: toStorageValue(type, displayValue, system),
-      recordedOn: options.recordedOn ?? todayIsoDate(now),
+      recordedOn,
       createdAt: now.toISOString(),
       note: options.note ?? null,
     };

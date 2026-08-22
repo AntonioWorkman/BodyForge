@@ -5,6 +5,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { APP_CONFIG } from '@/config/app.config';
+import { BackupExportInvariantError } from '@/domain/errors';
 import { fire as fireHaptic } from '@/motion/haptics';
 import { useServices } from '@/providers/servicesContext';
 
@@ -44,8 +45,17 @@ export function useDataActions(onChanged: () => Promise<void>) {
       }
 
       fireHaptic('setComplete');
-    } catch {
-      Alert.alert('Export failed', 'Your backup could not be created. Nothing has changed.');
+    } catch (error) {
+      // A refused export is not a generic failure. It means stored history
+      // could not be written out intact, and the error names which quest and
+      // what is missing — the only place the player can learn that, so it is
+      // shown rather than flattened into "something went wrong".
+      Alert.alert(
+        'Export failed',
+        error instanceof BackupExportInvariantError
+          ? error.message
+          : 'Your backup could not be created. Nothing has changed.',
+      );
     } finally {
       setBusy(null);
     }

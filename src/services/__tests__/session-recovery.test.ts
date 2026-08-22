@@ -242,6 +242,38 @@ describe('measurement persistence', () => {
     await expect(harness.measurements.log('waist', Number.NaN, 'metric')).rejects.toThrow();
   });
 
+  /**
+   * `recordedOn` is written to a column the charts and history order
+   * lexicographically, so a malformed or impossible day sorts into the wrong
+   * place permanently. It is the one field a caller supplies directly, and it
+   * is checked rather than trusted — the same contract backup import enforces.
+   */
+  it.each(['2026-02-30', '2026-13-01', '2026-8-1', 'yesterday', '2026-08-21T00:00:00.000Z', ''])(
+    'refuses to record a measurement dated %s',
+    async (recordedOn) => {
+      await expect(harness.measurements.log('waist', 81, 'metric', { recordedOn })).rejects.toThrow(
+        /calendar date/,
+      );
+    },
+  );
+
+  it('writes nothing when the date is refused', async () => {
+    await harness.measurements.log('waist', 81, 'metric', { recordedOn: '2026-08-20' });
+    await expect(
+      harness.measurements.log('waist', 82, 'metric', { recordedOn: '2026-02-30' }),
+    ).rejects.toThrow();
+
+    const all = await harness.measurements.list('waist');
+    expect(all.map((m) => m.recordedOn)).toEqual(['2026-08-20']);
+  });
+
+  it('still accepts a real leap day', async () => {
+    const logged = await harness.measurements.log('waist', 81, 'metric', {
+      recordedOn: '2028-02-29',
+    });
+    expect(logged.recordedOn).toBe('2028-02-29');
+  });
+
   it('records optional starting measurements during onboarding only when given', async () => {
     const fresh = await createHarness();
     await fresh.player.createPlayer({

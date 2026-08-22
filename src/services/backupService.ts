@@ -4,6 +4,7 @@ import type { SqlDatabase } from '@/database/sqlDatabase';
 import type { UnitOfWork } from '@/database/unitOfWork';
 import { encodeStringArray } from '@/database/repositories/rows';
 import { seedCatalog, seedProgressionStates } from '@/database/seed';
+import { BackupExportInvariantError } from '@/domain/errors';
 import { recomputeMasteryWith } from './progressionService';
 
 import type { ProgressionState, WorkoutSessionDetail } from '@/domain/types';
@@ -54,7 +55,7 @@ export class BackupService {
       // instead, and the player can set a new one.
       profile: { ...profile, avatarUri: null },
       settings,
-      sessions: sessions.flatMap(toBackupSession),
+      sessions: sessions.map(toBackupSession),
       measurements,
       progression: progression.map(toBackupProgression),
       templateExercises,
@@ -300,32 +301,41 @@ export class BackupService {
 /**
  * Narrows a stored session to the completed shape a backup carries.
  *
- * The format is completed history only, and the compiler will not take that on
- * trust: anything without its completion fields is dropped rather than exported
- * as a record the importer would then reject.
+ * The compiler will not take "this came from the completed-history query" on
+ * trust, and neither will this function. It used to drop what it could not
+ * narrow, which made a corrupt row indistinguishable from a player who had
+ * simply trained less — a backup that reported success while quietly leaving
+ * out finished quests. A backup is only worth having if it is either faithful
+ * or a visible failure, so the missing fields are collected and thrown.
  */
-function toBackupSession(session: WorkoutSessionDetail): Backup['sessions'] {
+function toBackupSession(session: WorkoutSessionDetail): Backup['sessions'][number] {
+  const reasons: string[] = [];
+
+  if (session.status !== 'completed') reasons.push(`status is "${session.status}"`);
+  if (session.completedAt === null) reasons.push('no completion time');
+  if (session.durationSeconds === null) reasons.push('no duration');
+  if (session.xpAwarded === null) reasons.push('no XP award');
+  if (session.sessionNumber === null) reasons.push('no quest number');
+  if (session.performances.length === 0) reasons.push('no recorded exercises');
+
   if (
-    session.status !== 'completed' ||
+    reasons.length > 0 ||
     session.completedAt === null ||
     session.durationSeconds === null ||
     session.xpAwarded === null ||
-    session.sessionNumber === null ||
-    session.performances.length === 0
+    session.sessionNumber === null
   ) {
-    return [];
+    throw new BackupExportInvariantError(session.id, reasons);
   }
 
-  return [
-    {
-      ...session,
-      status: 'completed',
-      completedAt: session.completedAt,
-      durationSeconds: session.durationSeconds,
-      xpAwarded: session.xpAwarded,
-      sessionNumber: session.sessionNumber,
-    },
-  ];
+  return {
+    ...session,
+    status: 'completed',
+    completedAt: session.completedAt,
+    durationSeconds: session.durationSeconds,
+    xpAwarded: session.xpAwarded,
+    sessionNumber: session.sessionNumber,
+  };
 }
 
 /**

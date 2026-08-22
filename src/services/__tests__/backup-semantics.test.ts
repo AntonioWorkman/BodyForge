@@ -85,17 +85,84 @@ describe('backup semantic validation', () => {
     });
   });
 
+  /**
+   * Timestamps are stored as TEXT and history is ordered lexicographically, so
+   * "this parses" is the wrong bar. A document mixing `2026-08-21T12:34:56Z`
+   * with canonical values holds nothing invalid in isolation and still sorts
+   * the player's history wrongly, forever. Only the app's own spelling is
+   * admitted, and non-canonical input is refused rather than normalised.
+   */
   describe('timestamps', () => {
     it('rejects an unparseable timestamp rather than carrying it into sorting', async () => {
       rejects(await hostile((d) => (d.sessions[0].completedAt = 'yesterday-ish')));
     });
 
+    it('rejects an empty timestamp', async () => {
+      rejects(await hostile((d) => (d.sessions[0].startedAt = '')));
+    });
+
+    it.each([
+      ['a human-readable date', 'August 21, 2026'],
+      ['a space separator instead of T', '2026-08-21 12:34:56'],
+      ['second precision, no milliseconds', '2026-08-21T12:34:56Z'],
+      ['a zero UTC offset spelled out', '2026-08-21T12:34:56.789+00:00'],
+      ['a non-UTC offset', '2026-08-21T12:34:56.789-04:00'],
+      ['an impossible day in canonical clothing', '2026-02-30T00:00:00.000Z'],
+    ])('rejects %s, which Date.parse would have accepted', async (_label, value) => {
+      rejects(await hostile((d) => (d.sessions[0].completedAt = value)), /UTC timestamp/);
+    });
+
+    it('rejects non-canonical timestamps wherever they appear', async () => {
+      const nonCanonical = '2026-08-21T12:34:56.789-04:00';
+      rejects(await hostile((d) => (d.exportedAt = nonCanonical)), /UTC timestamp/);
+      rejects(await hostile((d) => (d.profile.createdAt = nonCanonical)), /UTC timestamp/);
+      rejects(await hostile((d) => (d.measurements[0].createdAt = nonCanonical)), /UTC timestamp/);
+      rejects(
+        await hostile((d) => (d.sessions[0].performances[0].completedAt = nonCanonical)),
+        /UTC timestamp/,
+      );
+      rejects(
+        await hostile((d) => (d.sessions[0].performances[0].sets[0].completedAt = nonCanonical)),
+        /UTC timestamp/,
+      );
+      rejects(await hostile((d) => (d.progression[0].startedAt = nonCanonical)), /UTC timestamp/);
+    });
+
+    it('accepts the canonical spelling of the same instant', async () => {
+      const doc = JSON.parse(await harness.backup.exportToJson());
+      doc.sessions[0].completedAt = new Date(doc.sessions[0].completedAt).toISOString();
+      expect(validateBackup(JSON.stringify(doc)).ok).toBe(true);
+    });
+  });
+
+  /**
+   * A calendar day is the player's local day, not a truncated instant, and
+   * `Date.parse` rolls impossible days forward into real ones — `2026-02-30`
+   * would be silently recorded as the 2nd of March.
+   */
+  describe('calendar dates', () => {
     it('rejects a date-shaped string that is not a real date', async () => {
       rejects(await hostile((d) => (d.measurements[0].recordedOn = '2026-13-45')));
     });
 
-    it('rejects an empty timestamp', async () => {
-      rejects(await hostile((d) => (d.sessions[0].startedAt = '')));
+    it.each(['2026-02-29', '2026-02-30', '2026-04-31', '2026-13-01', '2026-00-12'])(
+      'rejects the impossible date %s instead of rolling it forward',
+      async (value) => {
+        rejects(await hostile((d) => (d.measurements[0].recordedOn = value)), /real calendar date/);
+      },
+    );
+
+    it.each(['2026-08-21', '2028-02-29'])('still accepts the real date %s', async (value) => {
+      const doc = JSON.parse(await harness.backup.exportToJson());
+      doc.measurements[0].recordedOn = value;
+      expect(validateBackup(JSON.stringify(doc)).ok).toBe(true);
+    });
+
+    it('rejects a full timestamp where a calendar day belongs', async () => {
+      rejects(
+        await hostile((d) => (d.measurements[0].recordedOn = '2026-08-21T00:00:00.000Z')),
+        /real calendar date/,
+      );
     });
   });
 

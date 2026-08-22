@@ -94,3 +94,29 @@ export class PlayerAlreadyExistsError extends Error {
     super('A player already exists on this device.');
   }
 }
+
+/**
+ * Durable history was reached that the portable backup format cannot describe.
+ *
+ * Export used to drop such a session and return the rest, so a player could be
+ * handed a file that reported success while silently missing quests they had
+ * actually finished — the one failure mode a backup must never have, because
+ * it is invisible until the day the backup is needed. Reaching a completed
+ * session without its completion fields means storage is in a state the app
+ * believes is impossible, and the honest response is to fail the export and
+ * say which session and why.
+ */
+export class BackupExportInvariantError extends Error {
+  override readonly name = 'BackupExportInvariantError';
+
+  constructor(
+    readonly sessionId: string,
+    readonly reasons: string[],
+  ) {
+    super(
+      `This backup was stopped because a recorded quest could not be exported ` +
+        `intact (${sessionId}: ${reasons.join('; ')}). Nothing has been saved, ` +
+        `so no history has been lost.`,
+    );
+  }
+}
