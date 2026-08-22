@@ -4,7 +4,12 @@
     "appVersionSource": "local"
   },
   "build": {
-    "preview": {
+    "base": {
+      "node": "22.22.2"
+    },
+    "development": {
+      "extends": "base",
+      "developmentClient": true,
       "distribution": "internal",
       "ios": {
         "simulator": false
@@ -12,6 +17,26 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "preview": {
+      "extends": "base",
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }

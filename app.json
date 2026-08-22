@@ -19,7 +19,8 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"]
     },
     "web": {
       "bundler": "metro",
@@ -34,7 +35,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "BodyForge uses your photo library only to set a local player avatar. The image never leaves your device."
+          "photosPermission": "BodyForge uses your photo library only to set a local player avatar. The image never leaves your device.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       [

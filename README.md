@@ -112,6 +112,48 @@ npm run web     # run in a browser
 
 Day-to-day work needs only Expo Go. Build a development client if you add a native module Expo Go does not bundle.
 
+## Device builds (EAS)
+
+Native projects are generated, not committed — `ios/` and `android/` are gitignored and produced by `expo prebuild`. Builds run on [EAS](https://docs.expo.dev/build/introduction/).
+
+Three profiles in `eas.json`, all pinned to the same Node version CI uses so a build is reproducible:
+
+| Profile       | Purpose                                                  | iOS                 | Android |
+| ------------- | -------------------------------------------------------- | ------------------- | ------- |
+| `development` | On-device iteration with the dev client and fast refresh | ad-hoc, real device | APK     |
+| `preview`     | Internal testing of a release-configuration build        | ad-hoc, real device | APK     |
+| `production`  | Store submission                                         | App Store           | AAB     |
+
+```bash
+npx eas login              # once, with the account owning the EAS project
+npm run device:register    # iOS only: register a device UDID for ad-hoc builds
+
+npm run build:dev:android  # APK — install directly, no Apple account needed
+npm run build:dev:ios      # requires an Apple Developer account
+npm run build:preview:android
+npm run build:preview:ios
+npm run build:production
+```
+
+Android needs only an Expo account. iOS device builds additionally need an Apple Developer account: every physical device must be registered by UDID before it can appear in an ad-hoc provisioning profile, or the build succeeds and then refuses to install.
+
+### Permissions
+
+The app ships the smallest set it can, and the config asserts that rather than accepting whatever the dependencies bring:
+
+- `expo-image-picker` declares `cameraPermission: false` and `microphonePermission: false`. The avatar flow only ever calls `launchImageLibraryAsync`, so the camera and microphone permissions its plugin adds by default — `RECORD_AUDIO` among them — are blocked. An app that says nothing leaves the device should not ask for a microphone it never opens.
+- `SYSTEM_ALERT_WINDOW`, which React Native contributes for its dev overlay, is blocked from shipped builds.
+
+That leaves `INTERNET`, `VIBRATE`, and the legacy storage permissions capped at `maxSdkVersion=32`. After changing anything here, re-check the real manifest rather than trusting the config:
+
+```bash
+npx expo prebuild --no-install --platform android
+grep uses-permission android/app/src/main/AndroidManifest.xml
+rm -rf ios android
+```
+
+Entries carrying `tools:node="remove"` are stripped during manifest merge and do not reach the APK.
+
 ## Verification
 
 ```bash
@@ -147,9 +189,16 @@ The suite is thorough about logic and persistence. It says nothing about the fol
 - Avatar lifecycle against a real filesystem and photo picker
 - Accessibility audit and reduced-motion behaviour on device
 - Release-build performance and memory profile
-- Icons, splash, bundle identifiers, signing, permissions and store metadata
+- **An actual EAS build.** The build configuration is complete and its generated
+  native output has been inspected, but no build has been run — that needs an
+  Expo account, and iOS additionally needs an Apple Developer account.
+- Code signing, and store metadata and review
 - Ongoing dependency and security review
 - A crash and error observability strategy
+
+Icons, splash, bundle identifiers and the Android permission set are configured
+and verified against generated native output; the remaining release items above
+are not.
 
 ## Scope boundaries
 
