@@ -10,10 +10,10 @@
     "backgroundColor": "#08060D",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.bodyforge.app"
+      "bundleIdentifier": "com.gravatum.bodyforge"
     },
     "android": {
-      "package": "com.bodyforge.app",
+      "package": "com.gravatum.bodyforge",
       "adaptiveIcon": {
         "backgroundColor": "#08060D",
         "foregroundImage": "./assets/android-icon-foreground.png",
