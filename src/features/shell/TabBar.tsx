@@ -1,7 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 // Expo Router ships its own bottom-tabs implementation; its prop types are the
 // ones the navigator actually passes, so they are imported from there.
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
@@ -9,9 +8,7 @@ import type { BottomTabBarProps } from 'expo-router/build/react-navigation/botto
 import { Glyph, Text } from '@/components';
 import type { GlyphName } from '@/components';
 import { colors, layout, spacing } from '@/design';
-import { easing, timing } from '@/motion';
 import { fire as fireHaptic } from '@/motion/haptics';
-import { reduceDuration, useReducedMotion } from '@/motion/useMotionPreference';
 
 /**
  * The tab bar.
@@ -73,6 +70,19 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   );
 }
 
+/**
+ * One tab.
+ *
+ * The active marker is derived straight from `focused` on the render path. It
+ * used to cross-fade through `useDerivedValue` + `useAnimatedStyle`, which ran
+ * a Hermes worklet on the display-link thread for every one of the five tabs,
+ * for the whole life of the shell — and the shell is mounted from the moment
+ * onboarding finishes until the app is killed. Those frames are where the iOS
+ * crash aborts. The underline now appears and disappears immediately.
+ *
+ * The marker was never the only signal: the glyph and label change colour too,
+ * and `accessibilityState.selected` carries it for assistive technology.
+ */
 function TabItem({
   label,
   glyph,
@@ -84,21 +94,6 @@ function TabItem({
   focused: boolean;
   onPress: () => void;
 }) {
-  const reducedMotion = useReducedMotion();
-  const progress = useDerivedValue(() =>
-    withTiming(focused ? 1 : 0, {
-      duration: reduceDuration(timing.interactionFast, reducedMotion),
-      easing: easing.standard,
-    }),
-  );
-
-  // A short violet underline is the active marker. It is deliberately not the
-  // only signal — the label and glyph also change colour.
-  const markerStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ scaleX: 0.4 + progress.value * 0.6 }],
-  }));
-
   return (
     <Pressable
       accessibilityRole="tab"
@@ -111,7 +106,7 @@ function TabItem({
       <Text variant="micro" color={focused ? 'highlight' : 'textMuted'} numberOfLines={1}>
         {label}
       </Text>
-      <Animated.View style={[styles.marker, markerStyle]} />
+      {focused ? <View style={styles.marker} /> : null}
     </Pressable>
   );
 }
