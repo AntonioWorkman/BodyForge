@@ -10,7 +10,8 @@
     "backgroundColor": "#08060D",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.gravatum.bodyforge"
+      "bundleIdentifier": "com.gravatum.bodyforge",
+      "buildNumber": "2"
     },
     "android": {
       "package": "com.gravatum.bodyforge",
