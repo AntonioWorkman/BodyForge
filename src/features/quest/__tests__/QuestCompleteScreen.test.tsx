@@ -125,6 +125,79 @@ describe('Quest Complete', () => {
     expect(screen.getByText('Regular Push-Up')).toBeTruthy();
   });
 
+  /**
+   * The ordinary completion has to land its whole primary flow on the phone,
+   * ending at the button back to System. Jest cannot measure real pixels, so
+   * these assert the structure and ordering that make that possible; the sizing
+   * itself is covered by `questCompleteLayout.test.ts` against representative
+   * device heights.
+   */
+  describe('layout', () => {
+    /** Render order, used to check what comes after what. */
+    const orderOf = (needle: string) => JSON.stringify(screen.toJSON()).indexOf(needle);
+
+    it('shows the whole primary flow of an ordinary completion', async () => {
+      const session = await logFullSession(harness.services, (min) => min);
+      await openCompletion(session.id);
+
+      expect(screen.getByTestId('quest-complete')).toBeTruthy();
+      expect(screen.getByText('QUEST COMPLETE')).toBeTruthy();
+      expect(screen.getByText('Exercises')).toBeTruthy();
+      expect(screen.getByText('Sets')).toBeTruthy();
+      expect(screen.getByText('Duration')).toBeTruthy();
+      expect(screen.getByText(/^\+\d+ XP$/)).toBeTruthy();
+      expect(screen.getByText('Return to System')).toBeTruthy();
+    });
+
+    it('orders the primary flow so the call to action comes last', async () => {
+      const session = await logFullSession(harness.services, (min) => min);
+      await openCompletion(session.id);
+
+      const cta = orderOf('Return to System');
+      expect(cta).toBeGreaterThan(-1);
+      for (const earlier of ['QUEST COMPLETE', 'Exercises', 'Duration']) {
+        expect(orderOf(earlier)).toBeLessThan(cta);
+      }
+    });
+
+    it('keeps the call to action last even on an exceptional completion', async () => {
+      // Beating the top of every prescribed range earns personal bests, so this
+      // completion carries milestone sections the ordinary one does not.
+      const session = await logFullSession(harness.services, (_min, max) => max + 5);
+      await openCompletion(session.id);
+
+      const cta = orderOf('Return to System');
+      expect(cta).toBeGreaterThan(-1);
+      expect(orderOf('QUEST COMPLETE')).toBeLessThan(cta);
+    });
+
+    it('does not drop milestone content to save space', async () => {
+      const ordinary = await logFullSession(harness.services, (min) => min);
+      await openCompletion(ordinary.id);
+      const ordinarySize = JSON.stringify(screen.toJSON()).length;
+
+      if (completeScreen) await completeScreen.unmount();
+      completeScreen = null;
+
+      const exceptional = await logFullSession(harness.services, (_min, max) => max + 5);
+      await openCompletion(exceptional.id);
+
+      // The exceptional completion renders strictly more, and is allowed to
+      // scroll for it. Tightening the ordinary case must never come at the cost
+      // of hiding what a player actually earned.
+      expect(JSON.stringify(screen.toJSON()).length).toBeGreaterThan(ordinarySize);
+      expect(screen.getByText('Return to System')).toBeTruthy();
+    });
+
+    it('stays scrollable so anything below the fold is reachable', async () => {
+      const session = await logFullSession(harness.services, (_min, max) => max + 5);
+      await openCompletion(session.id);
+
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree).toContain('RCTScrollView');
+    });
+  });
+
   it('refuses to record the same session twice', async () => {
     const session = await logFullSession(harness.services, (min) => min);
     await harness.services.workouts.completeSession(session.id);

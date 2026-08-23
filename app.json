@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.gravatum.bodyforge",
-      "buildNumber": "2"
+      "buildNumber": "3"
     },
     "android": {
       "package": "com.gravatum.bodyforge",

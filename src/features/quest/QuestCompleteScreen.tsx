@@ -5,6 +5,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 import { Button, EmptyState, Screen, SectionLabel, Text } from '@/components';
 import { Core } from '@/core';
+import { questCompleteCoreSize } from './questCompleteLayout';
 import { colors, layout, radius, spacing } from '@/design';
 import { WorkoutIncompleteError } from '@/domain/errors';
 import { formatDuration } from '@/domain/format';
@@ -29,7 +30,7 @@ export function QuestCompleteScreen() {
   const services = useServices();
   const router = useRouter();
   const reducedMotion = useReducedMotion();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const params = useLocalSearchParams<{ sessionId?: string }>();
   const clearWorkout = useActiveWorkoutStore((store) => store.clear);
 
@@ -124,7 +125,7 @@ export function QuestCompleteScreen() {
           stage={player.core.stage}
           stageProgress={player.core.stageProgress}
           charge={1}
-          size={Math.min(width - layout.screenPadding * 2, 240)}
+          size={questCompleteCoreSize({ width, height })}
         />
       </Animated.View>
 
@@ -271,12 +272,15 @@ function Fact({ value, label }: { value: string; label: string }) {
 }
 
 const styles = StyleSheet.create({
-  coreBlock: { alignItems: 'center', marginTop: spacing.xl },
+  // The vertical rhythm here is deliberately tighter than elsewhere in the app.
+  // Quest Complete has to land its whole ordinary case above the fold, and
+  // `huge` gaps between every block cost more than they earn on a phone.
+  coreBlock: { alignItems: 'center', marginTop: spacing.md },
   title: { alignItems: 'center', gap: spacing.xs, marginTop: spacing.lg },
-  facts: { flexDirection: 'row', marginTop: spacing.huge, gap: spacing.md },
+  facts: { flexDirection: 'row', marginTop: spacing.xxl, gap: spacing.md },
   fact: { flex: 1, gap: spacing.xxs },
-  xpBlock: { marginTop: spacing.huge, gap: spacing.lg },
-  xpLines: { gap: spacing.sm },
+  xpBlock: { marginTop: spacing.xxl, gap: spacing.md },
+  xpLines: { gap: spacing.xs },
   xpLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   xpLabel: { minWidth: 110 },
   xpDetail: { flex: 1 },
@@ -292,5 +296,5 @@ const styles = StyleSheet.create({
   section: { marginTop: spacing.xxl, gap: spacing.md },
   best: { gap: spacing.xxs },
   progression: { marginTop: spacing.xxl, gap: spacing.sm },
-  next: { marginTop: spacing.huge, gap: spacing.sm, marginBottom: spacing.xxl },
+  next: { marginTop: spacing.xxl, gap: spacing.sm, marginBottom: spacing.lg },
 });

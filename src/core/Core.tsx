@@ -104,10 +104,19 @@ export function Core({
     return path;
   }, [outer, profile.traces, cx, cy]);
 
-  // Ambient breathing — a fraction of a percent, deliberately near-subliminal.
+  /**
+   * Ambient breathing — the Core's clearest sign of life.
+   *
+   * Amplitude and period come from the stage profile rather than being fixed
+   * here, so the breath is part of the progression language: dormant breathes
+   * slowly and shallowly, ascendant faster and deeper. It used to be a flat
+   * ±1.2% at seven seconds, which measured on a real phone was close to
+   * invisible — the Core looked switched off rather than restrained.
+   */
   const breath = useDerivedValue(() => {
     if (reducedMotion || paused) return 1;
-    return 1 + Math.sin((clock.value / 1000) * ((Math.PI * 2) / 7)) * 0.012;
+    const cycle = (Math.PI * 2) / profile.breathPeriod;
+    return 1 + Math.sin((clock.value / 1000) * cycle) * profile.breathAmplitude;
   });
 
   const rotation = useDerivedValue(() => {

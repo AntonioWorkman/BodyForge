@@ -30,6 +30,15 @@ export interface CoreProfile {
   particles: number;
   /** Seconds for one full ambient rotation. Slower reads as heavier. */
   rotationPeriod: number;
+  /**
+   * Peak scale deviation of the ambient breath, as a fraction of the Core's
+   * size. This is the Core's most legible sign of life, so it belongs to the
+   * stage rather than being one global constant: dormant should read as slow
+   * and restrained, ascendant as unmistakably awake.
+   */
+  breathAmplitude: number;
+  /** Seconds for one full breath in and out. Longer reads as calmer. */
+  breathPeriod: number;
 }
 
 const PROFILES: Record<CoreStage, CoreProfile> = {
@@ -40,8 +49,10 @@ const PROFILES: Record<CoreStage, CoreProfile> = {
     energy: 0.14,
     rimLight: 0.22,
     traces: 3,
-    particles: 0,
-    rotationPeriod: 90,
+    particles: 3,
+    rotationPeriod: 82,
+    breathAmplitude: 0.028,
+    breathPeriod: 6.5,
   },
   awakened: {
     facets: 7,
@@ -52,6 +63,8 @@ const PROFILES: Record<CoreStage, CoreProfile> = {
     traces: 4,
     particles: 4,
     rotationPeriod: 74,
+    breathAmplitude: 0.032,
+    breathPeriod: 5.6,
   },
   charged: {
     facets: 8,
@@ -62,6 +75,8 @@ const PROFILES: Record<CoreStage, CoreProfile> = {
     traces: 4,
     particles: 7,
     rotationPeriod: 62,
+    breathAmplitude: 0.036,
+    breathPeriod: 4.8,
   },
   evolved: {
     facets: 10,
@@ -72,6 +87,8 @@ const PROFILES: Record<CoreStage, CoreProfile> = {
     traces: 5,
     particles: 10,
     rotationPeriod: 52,
+    breathAmplitude: 0.04,
+    breathPeriod: 4.2,
   },
   ascendant: {
     facets: 12,
@@ -82,6 +99,8 @@ const PROFILES: Record<CoreStage, CoreProfile> = {
     traces: 6,
     particles: 13,
     rotationPeriod: 44,
+    breathAmplitude: 0.045,
+    breathPeriod: 3.6,
   },
 };
 
@@ -209,5 +228,7 @@ export function blendProfile(stage: CoreStage, progress: number): CoreProfile {
     traces: from.traces,
     particles: from.particles,
     rotationPeriod: from.rotationPeriod + (to.rotationPeriod - from.rotationPeriod) * t,
+    breathAmplitude: from.breathAmplitude + (to.breathAmplitude - from.breathAmplitude) * t,
+    breathPeriod: from.breathPeriod + (to.breathPeriod - from.breathPeriod) * t,
   };
 }
